@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo, createContext, useContext } from "react";
 import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
-import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { doc, onSnapshot, setDoc, collection, addDoc, query, orderBy, limit, getDocs, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db, googleProvider } from "./firebase";
 import {
   Check, X, Download, RotateCcw, Zap, AlertTriangle, Sparkles,
   Award, ChevronLeft, ChevronRight, ListChecks, CalendarDays,
   BarChart3, ClipboardCheck, Sun, Moon, Trophy, AlertCircle, Camera, Eye,
-  LogOut, Cloud, CloudOff, RefreshCw, User, Settings, Plus, Trash2, Edit3, Save
+  LogOut, Cloud, CloudOff, RefreshCw, User, Settings, Plus, Trash2, Edit3, Save,
+  Crown, Shield, Lock, History, Undo2, Filter, FileText
 } from "lucide-react";
 
 // ============ DATA ============
@@ -53,6 +54,9 @@ const GRADE_NAMES = { 9: "九年級", 8: "八年級", 7: "七年級" };
 // ============ roster CONTEXT ============
 const RosterContext = createContext({ roster: DEFAULT_ROSTER, setRoster: () => {} });
 const useRoster = () => useContext(RosterContext);
+
+// 找特定 seq 的 person（用於 audit log 紀錄人名）
+const ROSTER_lookup = (roster, seq) => roster.find(p => p.seq === seq);
 
 // ============ DATE HELPERS ============
 const pad = (n) => String(n).padStart(2, "0");
@@ -273,13 +277,41 @@ function AttendanceApp({ user }) {
   }, []);
 
   const userEmail = (user.email || "").toLowerCase();
+  const ownerEmail = (config.owner || "").toLowerCase();
   const adminList = (config.admins || []).map(e => (e || "").toLowerCase());
-  const isAdmin = adminList.includes(userEmail);
-  const noAdminsYet = configLoaded && adminList.length === 0;
+  const isOwner = ownerEmail === userEmail;
+  const isAdmin = isOwner || adminList.includes(userEmail);
+  const noAdminsYet = configLoaded && !ownerEmail && adminList.length === 0;
 
-  const setAttendance = (updater) => {
+  // === 24 小時寬限期：判斷某個日期是否還可以被一般管理員修改 ===
+  // 規則：訓練日當天的 23:59 之後鎖定，需主管理員才能改
+  const canEditDate = (dateStr) => {
+    if (isOwner) return true; // 主管理員不受限
+    if (!isAdmin) return false; // 非管理員不能改舊資料（只能改今天）
+    // 一般管理員：只能改今天 + 昨天（因為昨天的 23:59 = 今天午夜）
+    const now = new Date();
+    const target = fromDateStr(dateStr);
+    target.setHours(23, 59, 59, 999); // 該日的 23:59
+    return now <= target || isToday(dateStr);
+  };
+  const isToday = (dateStr) => {
+    const today = new Date();
+    return toDateStr(today) === dateStr;
+  };
+
+  // 包裝版 setAttendance：點名修改 + 時間限制 + 編輯紀錄
+  // 用法不變：setAttendance(prev => ...) 或 setAttendance({...})
+  // 但會自動：1) 記錄差異 2) 超時擋下
+  const setAttendance = (updater, opts = {}) => {
     setAttendanceLocal((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
+      // 找出哪一天 / 哪個時段被改 → 用 opts.dateStr 提示
+      const dateStr = opts.dateStr;
+      if (dateStr && !canEditDate(dateStr)) {
+        // 不允許 → 不寫入，跳警告（由 caller 處理）
+        if (opts.onBlocked) opts.onBlocked(dateStr);
+        return prev;
+      }
       setSyncStatus("saving");
       const ref = doc(db, "teams", "longmen", "data", "attendance");
       setDoc(ref, {
@@ -290,6 +322,10 @@ function AttendanceApp({ user }) {
         .then(() => {
           setSyncStatus("synced");
           setLastSaveTime(Date.now());
+          // 寫紀錄
+          if (opts.logPayload) {
+            logAction("edit_attendance", opts.logPayload);
+          }
         })
         .catch((err) => {
           console.error("Save failed:", err);
@@ -299,7 +335,7 @@ function AttendanceApp({ user }) {
     });
   };
 
-  const setRoster = (updater) => {
+  const setRoster = (updater, opts = {}) => {
     setRosterLocal((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
       setSyncStatus("saving");
@@ -312,6 +348,9 @@ function AttendanceApp({ user }) {
         .then(() => {
           setSyncStatus("synced");
           setLastSaveTime(Date.now());
+          if (opts.logAction) {
+            logAction(opts.logAction, opts.logPayload || {});
+          }
         })
         .catch((err) => {
           console.error("Roster save failed:", err);
@@ -341,6 +380,25 @@ function AttendanceApp({ user }) {
         });
       return next;
     });
+  };
+
+  // === 寫入編輯紀錄（audit log） ===
+  // action: 動作類型（例如 "edit_attendance", "add_person", "delete_person"...）
+  // payload: { target?, before?, after?, note? }
+  const logAction = async (action, payload = {}) => {
+    try {
+      const colRef = collection(db, "teams", "longmen", "audit_log");
+      await addDoc(colRef, {
+        action,
+        user: user.email || user.uid,
+        userName: user.displayName || "",
+        timestamp: Date.now(),
+        ...payload,
+      });
+    } catch (err) {
+      console.error("Failed to log action:", err);
+      // 失敗也不影響主操作
+    }
   };
 
   const exportAll = () => {
@@ -464,7 +522,7 @@ function AttendanceApp({ user }) {
           </div>
         </header>
 
-        <TabBar tab={tab} setTab={setTab} />
+        <TabBar tab={tab} setTab={setTab} isOwner={isOwner} />
 
         <div className="tab-fade">
           {tab === "rollcall" && (
@@ -473,6 +531,8 @@ function AttendanceApp({ user }) {
               period={period} setPeriod={setPeriod}
               attendance={attendance} setAttendance={setAttendance}
               Y={Y} M={M} MONTH_DAYS={MONTH_DAYS} TRAINING_DAYS={TRAINING_DAYS}
+              isOwner={isOwner} isAdmin={isAdmin} canEditDate={canEditDate}
+              user={user}
             />
           )}
           {tab === "daily" && (
@@ -493,9 +553,14 @@ function AttendanceApp({ user }) {
               user={user}
               config={config}
               setConfig={setConfig}
+              isOwner={isOwner}
               isAdmin={isAdmin}
               noAdminsYet={noAdminsYet}
+              logAction={logAction}
             />
+          )}
+          {tab === "audit" && isOwner && (
+            <AuditLogView user={user} logAction={logAction} />
           )}
         </div>
 
@@ -514,12 +579,13 @@ function AttendanceApp({ user }) {
 }
 
 // ============ TAB BAR ============
-function TabBar({ tab, setTab }) {
+function TabBar({ tab, setTab, isOwner }) {
   const tabs = [
     { k: "rollcall", l: "點名", icon: ClipboardCheck },
     { k: "daily", l: "每日總覽", icon: ListChecks },
     { k: "monthly", l: "當月統計", icon: BarChart3 },
     { k: "manage", l: "管理", icon: Settings },
+    ...(isOwner ? [{ k: "audit", l: "紀錄", icon: History }] : []),
   ];
   return (
     <div className="flex gap-1 mb-4 p-1 rounded-2xl border-2"
@@ -671,7 +737,8 @@ function MiniCalendar({ selectedDate, onPick, attendance }) {
 
 // ============ ROLL CALL VIEW ============
 function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attendance, setAttendance,
-                        Y, M, MONTH_DAYS, TRAINING_DAYS }) {
+                        Y, M, MONTH_DAYS, TRAINING_DAYS,
+                        isOwner, isAdmin, canEditDate, user }) {
   const { roster } = useRoster();
   const [filter, setFilter] = useState("all");
   const [resetConfirm, setResetConfirm] = useState(false);
@@ -710,36 +777,81 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
   }), [rows]);
   const rate = stats.scheduledTotal === 0 ? 0 : Math.round(stats.onTime / stats.scheduledTotal * 100);
 
+  // 是否被鎖定（一般教練 / 管理員不能改超過寬限期的舊資料）
+  const locked = !canEditDate(selectedDate);
+  const [lockedAlert, setLockedAlert] = useState(false);
+  const triggerLockedAlert = () => {
+    setLockedAlert(true);
+    setTimeout(() => setLockedAlert(false), 4000);
+  };
+
   const mark = (seq, st) => {
+    if (locked) { triggerLockedAlert(); return; }
+    const person = ROSTER_lookup(roster, seq);
+    const before = sessionAtt[seq] || null;
     setAttendance(prev => {
       const day = { ...(prev[selectedDate] || {}) };
       const slot = { ...(day[period] || {}) };
-      if (slot[seq] === st) delete slot[seq];
-      else slot[seq] = st;
+      let after;
+      if (slot[seq] === st) { delete slot[seq]; after = null; }
+      else { slot[seq] = st; after = st; }
       day[period] = slot;
       return { ...prev, [selectedDate]: day };
+    }, {
+      dateStr: selectedDate,
+      logPayload: {
+        target: `attendance/${selectedDate}/${period}/${seq}`,
+        targetLabel: `${selectedDate} ${period === "am" ? "早訓" : "午訓"} - ${person?.name || `#${seq}`}`,
+        before: { value: before },
+        after: { value: st === before ? null : st },
+      },
     });
   };
   const markAllPresent = () => {
+    if (locked) { triggerLockedAlert(); return; }
+    const beforeSlot = { ...(attendance[selectedDate]?.[period] || {}) };
+    const changes = [];
     setAttendance(prev => {
       const day = { ...(prev[selectedDate] || {}) };
       const slot = { ...(day[period] || {}) };
-      rows.forEach(r => { if (r.scheduled && !r.actual) slot[r.seq] = "present"; });
+      rows.forEach(r => {
+        if (r.scheduled && !r.actual) {
+          slot[r.seq] = "present";
+          changes.push(r.name);
+        }
+      });
       day[period] = slot;
       return { ...prev, [selectedDate]: day };
+    }, {
+      dateStr: selectedDate,
+      logPayload: {
+        target: `attendance/${selectedDate}/${period}`,
+        targetLabel: `${selectedDate} ${period === "am" ? "早訓" : "午訓"} - 一鍵全到`,
+        note: `批次標記 ${changes.length} 人為出席：${changes.join("、")}`,
+      },
     });
   };
   const handleReset = () => {
+    if (locked) { triggerLockedAlert(); return; }
     if (!resetConfirm) {
       setResetConfirm(true);
       setTimeout(() => setResetConfirm(false), 3000);
       return;
     }
     setResetConfirm(false);
+    const beforeSlot = { ...(attendance[selectedDate]?.[period] || {}) };
     setAttendance(prev => {
       const day = { ...(prev[selectedDate] || {}) };
       day[period] = {};
       return { ...prev, [selectedDate]: day };
+    }, {
+      dateStr: selectedDate,
+      logPayload: {
+        target: `attendance/${selectedDate}/${period}`,
+        targetLabel: `${selectedDate} ${period === "am" ? "早訓" : "午訓"} - 重設`,
+        note: `清除整場點名（共 ${Object.keys(beforeSlot).length} 筆紀錄）`,
+        before: { value: beforeSlot },
+      },
     });
   };
   const exportSession = () => {
@@ -855,6 +967,21 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
           })}
         </div>
       </section>
+
+      {/* 鎖定提示：超過 24 小時且非主管理員 */}
+      {locked && (
+        <div className={"rounded-xl p-3 sm:p-4 border-2 flex items-start gap-3 " + (lockedAlert ? "animate-pulse" : "")}
+             style={{
+               background: "var(--amber-bg)",
+               borderColor: "var(--amber)",
+             }}>
+          <Lock size={18} strokeWidth={2.5} style={{ color: "#5C4810", marginTop: 2, flexShrink: 0 }} />
+          <div className="flex-1 text-xs sm:text-sm" style={{ color: "#5C4810" }}>
+            <div className="font-bold mb-0.5">此日期已超過編輯期限</div>
+            <div>已過寬限期（訓練日當天 23:59 之後鎖定）。如需修改，請聯絡主管理員。</div>
+          </div>
+        </div>
+      )}
 
       <section className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
         <StatCard tag="SCHEDULED" label="表定出席" value={stats.scheduledTotal} sub="人" color="var(--ink)" />
@@ -2184,37 +2311,123 @@ function SyncStatusBadge({ status, lastSaveTime }) {
 }
 
 // ============ MANAGEMENT VIEW ============
-function ManagementView({ user, config, setConfig, isAdmin, noAdminsYet }) {
+function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet, logAction }) {
   const { roster, setRoster } = useRoster();
   const [editingPerson, setEditingPerson] = useState(null);
   const [editingSch, setEditingSch] = useState(null);
   const [adding, setAdding] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [deletedPersons, setDeletedPersons] = useState([]);
 
-  // CASE 1: No admins set yet → bootstrap UI
+  // 訂閱軟刪除集合
+  useEffect(() => {
+    if (!isOwner && !isAdmin) return;
+    const ref = doc(db, "teams", "longmen", "data", "deleted_persons");
+    const unsub = onSnapshot(ref, (snap) => {
+      if (snap.exists() && Array.isArray(snap.data().value)) {
+        setDeletedPersons(snap.data().value);
+      } else {
+        setDeletedPersons([]);
+      }
+    });
+    return unsub;
+  }, [isOwner, isAdmin]);
+
+  // CASE 1: No admins yet → bootstrap
   if (noAdminsYet) {
-    return <BootstrapAdminPrompt user={user} setConfig={setConfig} />;
+    return <BootstrapAdminPrompt user={user} setConfig={setConfig} logAction={logAction} />;
   }
 
-  // CASE 2: User is not admin → read-only view
+  // CASE 2: Not admin → read-only
   if (!isAdmin) {
-    return <ReadOnlyManagement roster={roster} adminEmails={config.admins || []} userEmail={user.email} />;
+    return <ReadOnlyManagement roster={roster}
+                                ownerEmail={config.owner}
+                                adminEmails={config.admins || []}
+                                userEmail={user.email} />;
   }
 
-  // CASE 3: User is admin → full edit UI
+  // CASE 3: Admin → full edit
   const sortedRoster = [...roster].sort((a, b) => a.seq - b.seq);
 
-  const updatePerson = (seq, patch) => {
-    setRoster(prev => prev.map(p => p.seq === seq ? { ...p, ...patch } : p));
+  const updatePerson = (seq, patch, originalPerson) => {
+    setRoster(prev => prev.map(p => p.seq === seq ? { ...p, ...patch } : p), {
+      logAction: "edit_person",
+      logPayload: {
+        target: `person/${seq}`,
+        targetLabel: `編輯隊員 - ${originalPerson?.name || `#${seq}`}`,
+        before: originalPerson,
+        after: { ...originalPerson, ...patch },
+      },
+    });
   };
-  const deletePerson = (seq) => {
-    setRoster(prev => prev.filter(p => p.seq !== seq));
+
+  const softDeletePerson = (person) => {
+    // 1) 從 roster 移除
+    setRoster(prev => prev.filter(p => p.seq !== person.seq), {
+      logAction: "delete_person",
+      logPayload: {
+        target: `person/${person.seq}`,
+        targetLabel: `軟刪除隊員 - ${person.name}`,
+        before: person,
+        note: `30 天內可由主管理員還原`,
+      },
+    });
+    // 2) 加進 deleted_persons + 加 deletedAt
+    const ref = doc(db, "teams", "longmen", "data", "deleted_persons");
+    const newList = [
+      ...deletedPersons,
+      { ...person, deletedAt: Date.now(), deletedBy: user.email },
+    ];
+    setDoc(ref, { value: newList, updatedAt: Date.now() }).catch(console.error);
     setConfirmDelete(null);
   };
+
+  const restorePerson = (person) => {
+    // 1) 加回 roster（避免 seq 重複，重新分配最大 seq+1）
+    const exists = roster.find(p => p.seq === person.seq);
+    let newSeq = person.seq;
+    if (exists) {
+      newSeq = Math.max(...roster.map(p => p.seq), 0) + 1;
+    }
+    const restored = { ...person, seq: newSeq };
+    delete restored.deletedAt;
+    delete restored.deletedBy;
+    setRoster(prev => [...prev, restored], {
+      logAction: "restore_person",
+      logPayload: {
+        target: `person/${newSeq}`,
+        targetLabel: `還原隊員 - ${person.name}`,
+        after: restored,
+      },
+    });
+    // 2) 從 deleted_persons 移除
+    const ref = doc(db, "teams", "longmen", "data", "deleted_persons");
+    const newList = deletedPersons.filter(p => p.seq !== person.seq);
+    setDoc(ref, { value: newList, updatedAt: Date.now() }).catch(console.error);
+  };
+
+  const permanentlyDelete = (person) => {
+    const ref = doc(db, "teams", "longmen", "data", "deleted_persons");
+    const newList = deletedPersons.filter(p => p.seq !== person.seq);
+    setDoc(ref, { value: newList, updatedAt: Date.now() }).catch(console.error);
+    logAction("permanent_delete_person", {
+      target: `person/${person.seq}`,
+      targetLabel: `永久刪除隊員 - ${person.name}`,
+      before: person,
+    });
+  };
+
   const addPerson = (newP) => {
-    setRoster(prev => {
-      const maxSeq = prev.reduce((m, p) => Math.max(m, p.seq), 0);
-      return [...prev, { ...newP, seq: maxSeq + 1 }];
+    const maxSeq = roster.reduce((m, p) => Math.max(m, p.seq), 0);
+    const newPerson = { ...newP, seq: maxSeq + 1 };
+    setRoster(prev => [...prev, newPerson], {
+      logAction: "add_person",
+      logPayload: {
+        target: `person/${newPerson.seq}`,
+        targetLabel: `新增隊員 - ${newPerson.name}`,
+        after: newPerson,
+      },
     });
   };
 
@@ -2225,8 +2438,19 @@ function ManagementView({ user, config, setConfig, isAdmin, noAdminsYet }) {
 
   return (
     <div className="space-y-4">
+      {/* 主管理員徽章 */}
+      {isOwner && (
+        <div className="rounded-xl px-4 py-2 flex items-center gap-2 border-2"
+             style={{ background: "var(--accent-2)", borderColor: "var(--accent-2)", color: "#fff" }}>
+          <Crown size={14} strokeWidth={2.5} style={{ color: "#F6C53C" }} />
+          <span className="text-xs font-medium">你是主管理員</span>
+          <span className="text-[10px] opacity-70">· 可編輯任何日期 · 可查看編輯紀錄 · 可永久刪除</span>
+        </div>
+      )}
+
       {/* Admin section */}
-      <AdminListSection user={user} config={config} setConfig={setConfig} />
+      <AdminListSection user={user} config={config} setConfig={setConfig}
+                         isOwner={isOwner} logAction={logAction} />
 
       {/* Header */}
       <section className="rounded-2xl p-4 sm:p-5 border-2"
@@ -2250,9 +2474,58 @@ function ManagementView({ user, config, setConfig, isAdmin, noAdminsYet }) {
         <div className="mt-3 pt-3 border-t text-xs leading-relaxed"
              style={{ borderColor: "var(--line)", color: "var(--ink-2)" }}>
           <span className="font-medium">提示：</span>
-          編輯隊員資料或課表會即時同步給所有教練。修改不會影響已點過名的歷史紀錄。
+          所有編輯都會被自動記錄。刪除隊員會先進入「已軟刪除」區，30 天內可由主管理員還原。
         </div>
       </section>
+
+      {/* 軟刪除區（管理員都可看到，但只有主管理員能永久刪除） */}
+      {deletedPersons.length > 0 && (
+        <section className="rounded-2xl border-2 overflow-hidden"
+                 style={{ borderColor: "var(--line-strong)" }}>
+          <button onClick={() => setShowDeleted(s => !s)}
+                  className="w-full flex items-center justify-between px-4 py-3"
+                  style={{ background: "var(--panel-2)" }}>
+            <div className="flex items-center gap-2">
+              <Trash2 size={14} strokeWidth={2.5} style={{ color: "var(--mute)" }} />
+              <span className="text-sm font-medium" style={{ color: "var(--ink)" }}>
+                已軟刪除（{deletedPersons.length} 位）
+              </span>
+            </div>
+            <ChevronRight size={14} strokeWidth={2.5}
+                          style={{ color: "var(--mute)", transform: showDeleted ? "rotate(90deg)" : "none" }} />
+          </button>
+          {showDeleted && (
+            <div className="p-3 space-y-2" style={{ background: "var(--panel)" }}>
+              {deletedPersons.map(p => (
+                <div key={p.seq} className="flex items-center gap-2 p-2 rounded border"
+                     style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}>
+                  <span className="num text-xs" style={{ color: "var(--mute)" }}>{pad(p.seq)}</span>
+                  <span className="font-medium text-sm flex-1" style={{ color: "var(--ink)" }}>{p.name}</span>
+                  <span className="num text-[10px]" style={{ color: "var(--mute)" }}>{p.cls}-{pad(p.num)}</span>
+                  <span className="text-[10px]" style={{ color: "var(--mute)" }}>
+                    {new Date(p.deletedAt).toLocaleDateString("zh-TW")} 由 {p.deletedBy}
+                  </span>
+                  <button onClick={() => restorePerson(p)}
+                          className="btn-tactile flex items-center gap-1 px-2 py-1 rounded text-xs border"
+                          style={{ borderColor: "var(--accent)", color: "var(--accent-2)", background: "var(--accent-bg)" }}>
+                    <Undo2 size={11} strokeWidth={2.5} />
+                    還原
+                  </button>
+                  {isOwner && (
+                    <button onClick={() => {
+                              if (confirm(`永久刪除 ${p.name}？此動作無法復原。`)) permanentlyDelete(p);
+                            }}
+                            className="btn-tactile flex items-center px-2 py-1 rounded text-xs border"
+                            style={{ borderColor: "var(--red)", color: "var(--red)" }}>
+                      <Trash2 size={11} strokeWidth={2.5} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Roster list */}
       {grouped.map(g => (
@@ -2276,12 +2549,12 @@ function ManagementView({ user, config, setConfig, isAdmin, noAdminsYet }) {
 
       {editingPerson && (
         <EditPersonModal person={editingPerson}
-                         onSave={(patch) => { updatePerson(editingPerson.seq, patch); setEditingPerson(null); }}
+                         onSave={(patch) => { updatePerson(editingPerson.seq, patch, editingPerson); setEditingPerson(null); }}
                          onCancel={() => setEditingPerson(null)} />
       )}
       {editingSch && (
         <EditScheduleModal person={editingSch}
-                           onSave={(sch) => { updatePerson(editingSch.seq, { sch }); setEditingSch(null); }}
+                           onSave={(sch) => { updatePerson(editingSch.seq, { sch }, editingSch); setEditingSch(null); }}
                            onCancel={() => setEditingSch(null)} />
       )}
       {adding && (
@@ -2292,7 +2565,7 @@ function ManagementView({ user, config, setConfig, isAdmin, noAdminsYet }) {
       )}
       {confirmDelete && (
         <ConfirmDeleteModal person={confirmDelete}
-                            onConfirm={() => deletePerson(confirmDelete.seq)}
+                            onConfirm={() => softDeletePerson(confirmDelete)}
                             onCancel={() => setConfirmDelete(null)} />
       )}
     </div>
@@ -2300,26 +2573,34 @@ function ManagementView({ user, config, setConfig, isAdmin, noAdminsYet }) {
 }
 
 // ============ ADMIN BOOTSTRAP / READ-ONLY / ADMIN MGMT ============
-function BootstrapAdminPrompt({ user, setConfig }) {
+function BootstrapAdminPrompt({ user, setConfig, logAction }) {
   const [confirming, setConfirming] = useState(false);
+  const handleSetOwner = () => {
+    setConfig({ owner: user.email, admins: [user.email] });
+    if (logAction) {
+      logAction("set_first_owner", {
+        targetLabel: `初始化主管理員`,
+        after: { owner: user.email },
+      });
+    }
+  };
   return (
     <div className="space-y-4">
       <section className="rounded-2xl p-5 sm:p-6 border-2 text-center"
                style={{ background: "var(--accent-bg)", borderColor: "var(--accent-2)" }}>
         <div className="flex justify-center mb-3">
           <div className="rounded-full p-3" style={{ background: "var(--accent-2)" }}>
-            <Settings size={28} strokeWidth={2} style={{ color: "#fff" }} />
+            <Crown size={28} strokeWidth={2} style={{ color: "#F6C53C" }} />
           </div>
         </div>
         <div className="text-[10px] tk-x mb-2" style={{ color: "var(--accent-2)" }}>
           INITIAL SETUP · 首次設定
         </div>
         <h2 className="display-cn text-xl mb-2" style={{ color: "var(--accent-2)" }}>
-          尚未設定管理員
+          尚未設定主管理員
         </h2>
         <p className="text-sm leading-relaxed mb-5 max-w-md mx-auto" style={{ color: "var(--ink-2)" }}>
-          管理員可以編輯隊員名單、課表，以及新增 / 移除其他管理員。<br />
-          一般教練仍可登入點名。
+          主管理員擁有最高權限：可隨時編輯任何日期、查看完整編輯紀錄、永久刪除隊員，並管理其他管理員。
         </p>
         <div className="rounded-lg px-4 py-3 inline-block mb-4 text-left"
              style={{ background: "var(--panel)", border: "1px solid var(--accent-2)" }}>
@@ -2333,7 +2614,8 @@ function BootstrapAdminPrompt({ user, setConfig }) {
             <button onClick={() => setConfirming(true)}
                     className="btn-tactile inline-flex items-center gap-2 px-5 py-3 rounded-lg border-2 font-medium"
                     style={{ borderColor: "var(--accent-2)", background: "var(--accent-2)", color: "#fff" }}>
-              將我設為第一位管理員
+              <Crown size={16} strokeWidth={2.5} style={{ color: "#F6C53C" }} />
+              將我設為主管理員
             </button>
           ) : (
             <div className="flex gap-2 justify-center">
@@ -2342,10 +2624,10 @@ function BootstrapAdminPrompt({ user, setConfig }) {
                       style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
                 取消
               </button>
-              <button onClick={() => setConfig({ admins: [user.email] })}
+              <button onClick={handleSetOwner}
                       className="btn-tactile px-4 py-2 rounded-lg border-2 text-sm font-medium"
                       style={{ borderColor: "var(--accent-2)", background: "var(--accent-2)", color: "#fff" }}>
-                確定設為管理員
+                確定設為主管理員
               </button>
             </div>
           )}
@@ -2354,13 +2636,13 @@ function BootstrapAdminPrompt({ user, setConfig }) {
       <section className="rounded-xl p-4 text-xs leading-relaxed"
                style={{ background: "var(--panel)", border: "1px solid var(--line)", color: "var(--ink-2)" }}>
         <div className="font-medium mb-1" style={{ color: "var(--accent-2)" }}>💡 接下來</div>
-        設為管理員後，可以在這個頁面新增其他管理員的 Email。所有管理員都能編輯名單、課表、以及調整管理員清單。
+        設為主管理員後，可以新增「一般管理員」協助你編輯名單、課表。一般管理員只能修改 24 小時內的點名，超過則需請你協助。
       </section>
     </div>
   );
 }
 
-function ReadOnlyManagement({ roster, adminEmails, userEmail }) {
+function ReadOnlyManagement({ roster, ownerEmail, adminEmails, userEmail }) {
   const grouped = [9, 8, 7].map(g => ({
     grade: g, label: GRADE_NAMES[g],
     members: roster.filter(p => p.grade === g).sort((a, b) => a.seq - b.seq),
@@ -2375,20 +2657,31 @@ function ReadOnlyManagement({ roster, adminEmails, userEmail }) {
           <div className="flex-1">
             <div className="font-medium text-sm mb-1" style={{ color: "#5C4810" }}>唯讀模式</div>
             <p className="text-xs leading-relaxed" style={{ color: "#5C4810" }}>
-              你目前不是管理員，僅能查看名單。如需修改隊員資料或課表，請聯絡下列管理員之一新增你：
+              你目前不是管理員，僅能查看名單。如需修改隊員資料或課表，請聯絡管理員新增你：
             </p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {adminEmails.length === 0 ? (
-                <span className="text-xs italic" style={{ color: "var(--mute)" }}>（尚無管理員）</span>
-              ) : (
-                adminEmails.map(e => (
-                  <span key={e} className="num text-[11px] px-2 py-0.5 rounded font-medium"
-                        style={{ background: "#5C4810", color: "#F6EAC4" }}>
-                    {e}
-                  </span>
-                ))
-              )}
-            </div>
+            {ownerEmail && (
+              <div className="mt-2 flex items-center gap-1.5">
+                <Crown size={11} strokeWidth={2.5} style={{ color: "#F6C53C" }} />
+                <span className="text-[10px]" style={{ color: "#5C4810" }}>主管理員</span>
+                <span className="num text-[11px] px-2 py-0.5 rounded font-medium"
+                      style={{ background: "#5C4810", color: "#F6EAC4" }}>
+                  {ownerEmail}
+                </span>
+              </div>
+            )}
+            {adminEmails.filter(e => e.toLowerCase() !== (ownerEmail || "").toLowerCase()).length > 0 && (
+              <div className="mt-2">
+                <div className="text-[10px] mb-1" style={{ color: "#5C4810" }}>一般管理員</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {adminEmails.filter(e => e.toLowerCase() !== (ownerEmail || "").toLowerCase()).map(e => (
+                    <span key={e} className="num text-[11px] px-2 py-0.5 rounded font-medium"
+                          style={{ background: "#5C4810", color: "#F6EAC4" }}>
+                      {e}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="mt-2 text-[11px]" style={{ color: "#5C4810", opacity: 0.7 }}>
               你的 Email：<span className="num font-medium">{userEmail}</span>
             </div>
@@ -2437,11 +2730,12 @@ function ReadOnlyManagement({ roster, adminEmails, userEmail }) {
   );
 }
 
-function AdminListSection({ user, config, setConfig }) {
+function AdminListSection({ user, config, setConfig, isOwner, logAction }) {
   const [adding, setAdding] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [confirmRemove, setConfirmRemove] = useState(null);
   const admins = config.admins || [];
+  const ownerEmail = (config.owner || "").toLowerCase();
   const userEmail = (user.email || "").toLowerCase();
 
   const addAdmin = () => {
@@ -2453,13 +2747,27 @@ function AdminListSection({ user, config, setConfig }) {
       return;
     }
     setConfig({ ...config, admins: [...admins, trimmed] });
+    if (logAction) {
+      logAction("add_admin", {
+        target: trimmed,
+        targetLabel: `新增管理員 - ${trimmed}`,
+      });
+    }
     setNewEmail("");
     setAdding(false);
   };
 
   const removeAdmin = (email) => {
-    if (admins.length <= 1) return; // 不能移除最後一位
+    if (admins.length <= 1) return;
+    // 不能移除主管理員（owner）
+    if (email.toLowerCase() === ownerEmail) return;
     setConfig({ ...config, admins: admins.filter(a => a !== email) });
+    if (logAction) {
+      logAction("remove_admin", {
+        target: email,
+        targetLabel: `移除管理員 - ${email}`,
+      });
+    }
     setConfirmRemove(null);
   };
 
@@ -2515,15 +2823,29 @@ function AdminListSection({ user, config, setConfig }) {
       <div className="space-y-1.5">
         {admins.map(email => {
           const isMe = email.toLowerCase() === userEmail;
-          const canRemove = admins.length > 1;
+          const isOwnerEntry = email.toLowerCase() === ownerEmail;
+          const canRemove = admins.length > 1 && !isOwnerEntry;
           return (
             <div key={email} className="flex items-center gap-2 px-3 py-2 rounded-lg"
-                 style={{ background: "var(--panel)", border: "1px solid var(--accent)" }}>
-              <User size={13} strokeWidth={2.5} style={{ color: "var(--accent-2)" }} />
+                 style={{
+                   background: "var(--panel)",
+                   border: isOwnerEntry ? "2px solid var(--accent-2)" : "1px solid var(--accent)",
+                 }}>
+              {isOwnerEntry ? (
+                <Crown size={13} strokeWidth={2.5} style={{ color: "#F6C53C", fill: "#F6C53C" }} />
+              ) : (
+                <User size={13} strokeWidth={2.5} style={{ color: "var(--accent-2)" }} />
+              )}
               <span className="num text-sm flex-1 break-all" style={{ color: "var(--accent-2)" }}>
                 {email}
               </span>
-              {isMe && (
+              {isOwnerEntry && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                      style={{ background: "var(--accent-2)", color: "#F6C53C", border: "1px solid #F6C53C" }}>
+                  主管理員
+                </span>
+              )}
+              {isMe && !isOwnerEntry && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
                       style={{ background: "var(--accent-2)", color: "#fff" }}>
                   你
@@ -2531,7 +2853,7 @@ function AdminListSection({ user, config, setConfig }) {
               )}
               <button onClick={() => setConfirmRemove(email)}
                       disabled={!canRemove}
-                      title={canRemove ? "移除管理員" : "至少需保留一位管理員"}
+                      title={isOwnerEntry ? "主管理員不能被移除" : canRemove ? "移除管理員" : "至少需保留一位管理員"}
                       className="btn-tactile w-7 h-7 rounded flex items-center justify-center"
                       style={{
                         color: canRemove ? "var(--red)" : "var(--line-strong)",
@@ -2895,5 +3217,268 @@ function Field({ label, children }) {
       </div>
       {children}
     </label>
+  );
+}
+
+// ============ AUDIT LOG VIEW (主管理員專屬) ============
+function AuditLogView({ user, logAction }) {
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filterAction, setFilterAction] = useState("all");
+  const [filterUser, setFilterUser] = useState("all");
+  const [pageSize, setPageSize] = useState(50);
+
+  // 載入紀錄
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        setLoading(true);
+        const colRef = collection(db, "teams", "longmen", "audit_log");
+        const q = query(colRef, orderBy("timestamp", "desc"), limit(pageSize));
+        const snap = await getDocs(q);
+        const arr = [];
+        snap.forEach(doc => arr.push({ id: doc.id, ...doc.data() }));
+        if (!cancelled) {
+          setLogs(arr);
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error("Failed to load logs:", err);
+        if (!cancelled) setLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [pageSize]);
+
+  // Filter
+  const filteredLogs = useMemo(() => {
+    return logs.filter(l => {
+      if (filterAction !== "all" && !l.action?.startsWith(filterAction)) return false;
+      if (filterUser !== "all" && l.user !== filterUser) return false;
+      return true;
+    });
+  }, [logs, filterAction, filterUser]);
+
+  const userList = useMemo(() => {
+    const set = new Set();
+    logs.forEach(l => l.user && set.add(l.user));
+    return Array.from(set);
+  }, [logs]);
+
+  const exportLogsCSV = () => {
+    const lines = [
+      ["時間", "操作者", "動作類型", "對象", "備註"].join(",")
+    ];
+    filteredLogs.forEach(l => {
+      lines.push([
+        new Date(l.timestamp).toLocaleString("zh-TW"),
+        l.user || "",
+        ACTION_LABELS[l.action] || l.action,
+        l.targetLabel || l.target || "",
+        (l.note || "").replace(/[\r\n,]/g, " "),
+      ].join(","));
+    });
+    const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `編輯紀錄_${toDateStr(new Date())}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const reload = async () => {
+    setLoading(true);
+    try {
+      const colRef = collection(db, "teams", "longmen", "audit_log");
+      const q = query(colRef, orderBy("timestamp", "desc"), limit(pageSize));
+      const snap = await getDocs(q);
+      const arr = [];
+      snap.forEach(doc => arr.push({ id: doc.id, ...doc.data() }));
+      setLogs(arr);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <section className="rounded-2xl p-4 sm:p-5 border-2"
+               style={{ background: "var(--accent-2)", borderColor: "var(--accent-2)", color: "#fff" }}>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <History size={20} strokeWidth={2.5} style={{ color: "#F6C53C" }} />
+            <div>
+              <div className="text-[10px] tk-x" style={{ color: "rgba(255,255,255,0.6)" }}>
+                AUDIT LOG · 編輯紀錄
+              </div>
+              <div className="display-cn text-lg sm:text-xl">主管理員後台</div>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={reload}
+                    className="btn-tactile flex items-center gap-1 px-3 py-1.5 rounded text-xs border"
+                    style={{ borderColor: "rgba(255,255,255,0.4)", color: "#fff" }}>
+              <RefreshCw size={12} strokeWidth={2.5} />
+              重新載入
+            </button>
+            <button onClick={exportLogsCSV}
+                    className="btn-tactile flex items-center gap-1 px-3 py-1.5 rounded text-xs border-2 font-medium"
+                    style={{ borderColor: "#F6C53C", background: "#F6C53C", color: "var(--accent-2)" }}>
+              <Download size={12} strokeWidth={2.5} />
+              匯出
+            </button>
+          </div>
+        </div>
+        <div className="mt-2 text-xs" style={{ color: "rgba(255,255,255,0.7)" }}>
+          所有編輯動作的完整紀錄。僅主管理員可看。資料永久保留。
+        </div>
+      </section>
+
+      {/* Filters */}
+      <section className="rounded-xl p-3 border"
+               style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
+        <div className="flex items-center gap-2 flex-wrap text-xs">
+          <Filter size={12} strokeWidth={2.5} style={{ color: "var(--mute)" }} />
+          <span className="tk-l" style={{ color: "var(--mute)" }}>篩選</span>
+          <select value={filterAction} onChange={e => setFilterAction(e.target.value)}
+                  className="px-2 py-1 rounded border text-xs"
+                  style={{ borderColor: "var(--line)" }}>
+            <option value="all">全部動作</option>
+            <option value="edit_attendance">點名修改</option>
+            <option value="add_person">新增隊員</option>
+            <option value="edit_person">編輯隊員</option>
+            <option value="delete_person">刪除隊員</option>
+            <option value="restore_person">還原隊員</option>
+            <option value="permanent_delete_person">永久刪除</option>
+            <option value="add_admin">新增管理員</option>
+            <option value="remove_admin">移除管理員</option>
+          </select>
+          <select value={filterUser} onChange={e => setFilterUser(e.target.value)}
+                  className="px-2 py-1 rounded border text-xs num"
+                  style={{ borderColor: "var(--line)" }}>
+            <option value="all">所有操作者</option>
+            {userList.map(u => <option key={u} value={u}>{u}</option>)}
+          </select>
+          <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))}
+                  className="px-2 py-1 rounded border text-xs"
+                  style={{ borderColor: "var(--line)" }}>
+            <option value={50}>最近 50 筆</option>
+            <option value={100}>最近 100 筆</option>
+            <option value={500}>最近 500 筆</option>
+          </select>
+          <span className="ml-auto num text-[11px]" style={{ color: "var(--mute)" }}>
+            顯示 {filteredLogs.length} / 共 {logs.length} 筆
+          </span>
+        </div>
+      </section>
+
+      {/* Logs */}
+      {loading ? (
+        <div className="text-center py-12" style={{ color: "var(--mute)" }}>
+          <RefreshCw size={20} className="inline animate-spin mr-2" />
+          載入中...
+        </div>
+      ) : filteredLogs.length === 0 ? (
+        <div className="text-center py-12 rounded-xl border-2 border-dashed"
+             style={{ borderColor: "var(--line)", color: "var(--mute)" }}>
+          <FileText size={28} className="inline mb-2" />
+          <div className="text-sm">沒有符合條件的紀錄</div>
+        </div>
+      ) : (
+        <section className="space-y-2">
+          {filteredLogs.map(log => <AuditLogRow key={log.id} log={log} />)}
+        </section>
+      )}
+    </div>
+  );
+}
+
+const ACTION_LABELS = {
+  edit_attendance: "✏️ 點名修改",
+  add_person: "➕ 新增隊員",
+  edit_person: "✏️ 編輯隊員",
+  delete_person: "🗑️ 軟刪除隊員",
+  restore_person: "⏪ 還原隊員",
+  permanent_delete_person: "🔥 永久刪除",
+  add_admin: "👤 新增管理員",
+  remove_admin: "✗ 移除管理員",
+  set_first_owner: "👑 初始化主管理員",
+};
+
+function AuditLogRow({ log }) {
+  const [expanded, setExpanded] = useState(false);
+  const dt = new Date(log.timestamp);
+  const dateStr = dt.toLocaleDateString("zh-TW");
+  const timeStr = dt.toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" });
+  const label = ACTION_LABELS[log.action] || log.action;
+  const hasDetails = log.before || log.after || log.note;
+
+  // 動作類型決定顏色
+  let accent = "var(--ink)";
+  if (log.action?.includes("delete")) accent = "var(--red)";
+  else if (log.action?.includes("add") || log.action?.includes("restore")) accent = "var(--green)";
+  else if (log.action?.includes("edit")) accent = "var(--blue)";
+  else if (log.action === "set_first_owner") accent = "var(--accent-2)";
+
+  return (
+    <div className="rounded-xl border p-3"
+         style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
+      <div className="flex items-baseline gap-2 flex-wrap">
+        <div className="num text-[10px]" style={{ color: "var(--mute)", minWidth: 80 }}>
+          {dateStr} {timeStr}
+        </div>
+        <span className="text-sm font-medium" style={{ color: accent }}>
+          {label}
+        </span>
+        <span className="num text-[11px]" style={{ color: "var(--mute)" }}>
+          by {log.user}
+        </span>
+        {hasDetails && (
+          <button onClick={() => setExpanded(e => !e)}
+                  className="ml-auto text-[11px] px-2 py-0.5 rounded border"
+                  style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+            {expanded ? "收合" : "詳情"}
+          </button>
+        )}
+      </div>
+      {log.targetLabel && (
+        <div className="text-sm mt-1" style={{ color: "var(--ink)" }}>
+          {log.targetLabel}
+        </div>
+      )}
+      {expanded && (
+        <div className="mt-2 pt-2 border-t text-xs space-y-2"
+             style={{ borderColor: "var(--line)" }}>
+          {log.note && (
+            <div>
+              <div className="text-[10px] tk-l mb-1" style={{ color: "var(--mute)" }}>備註</div>
+              <div style={{ color: "var(--ink-2)" }}>{log.note}</div>
+            </div>
+          )}
+          {log.before && (
+            <div>
+              <div className="text-[10px] tk-l mb-1" style={{ color: "var(--red)" }}>修改前</div>
+              <pre className="text-[10px] p-2 rounded overflow-x-auto"
+                   style={{ background: "var(--red-bg)", color: "var(--ink-2)" }}>
+                {JSON.stringify(log.before, null, 2)}
+              </pre>
+            </div>
+          )}
+          {log.after && (
+            <div>
+              <div className="text-[10px] tk-l mb-1" style={{ color: "var(--green)" }}>修改後</div>
+              <pre className="text-[10px] p-2 rounded overflow-x-auto"
+                   style={{ background: "var(--green-bg)", color: "var(--ink-2)" }}>
+                {JSON.stringify(log.after, null, 2)}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
