@@ -2132,6 +2132,12 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
   const dateInfo = getDateInfo(selectedDate);
   const amAtt = attendance[selectedDate]?.am || {};
   const pmAtt = attendance[selectedDate]?.pm || {};
+  const amLate = attendance[selectedDate]?.am_late || {};
+  const pmLate = attendance[selectedDate]?.pm_late || {};
+  const amNotes = attendance[selectedDate]?.am_notes || {};
+  const pmNotes = attendance[selectedDate]?.pm_notes || {};
+  const dayNote = attendance[selectedDate]?.notes || "";
+
   const computeStatus = (sch, actual) => {
     if (sch && actual === "present") return "on_time";
     if (sch && actual === "absent") return "no_show";
@@ -2147,6 +2153,10 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
       ...p, amSch, pmSch,
       amStatus: computeStatus(amSch, amAtt[p.seq]),
       pmStatus: computeStatus(pmSch, pmAtt[p.seq]),
+      amLate: !!amLate[p.seq],
+      pmLate: !!pmLate[p.seq],
+      amNote: amNotes[p.seq] || "",
+      pmNote: pmNotes[p.seq] || "",
     };
   });
   const cnt = (sel) => rows.filter(sel).length;
@@ -2154,17 +2164,24 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
     sch: cnt(r => r.amSch), on: cnt(r => r.amStatus === "on_time"),
     no: cnt(r => r.amStatus === "no_show"), pn: cnt(r => r.amStatus === "pending"),
     bn: cnt(r => r.amStatus === "bonus"),
+    late: cnt(r => r.amLate && (r.amStatus === "on_time" || r.amStatus === "bonus")),
   };
   const pmS = {
     sch: cnt(r => r.pmSch), on: cnt(r => r.pmStatus === "on_time"),
     no: cnt(r => r.pmStatus === "no_show"), pn: cnt(r => r.pmStatus === "pending"),
     bn: cnt(r => r.pmStatus === "bonus"),
+    late: cnt(r => r.pmLate && (r.pmStatus === "on_time" || r.pmStatus === "bonus")),
   };
   const absentees = rows.filter(r => r.amStatus === "no_show" || r.pmStatus === "no_show");
   const pendingees = rows.filter(r => r.amStatus === "pending" || r.pmStatus === "pending");
+  const latees = rows.filter(r =>
+    (r.amLate && (r.amStatus === "on_time" || r.amStatus === "bonus")) ||
+    (r.pmLate && (r.pmStatus === "on_time" || r.pmStatus === "bonus"))
+  );
+  const notedRows = rows.filter(r => r.amNote || r.pmNote);
 
-  // Tiny status chip - 4 distinct outcomes
-  const Tiny = ({ status }) => {
+  // Tiny status chip - 4 distinct outcomes (+ late variant)
+  const Tiny = ({ status, late }) => {
     const map = {
       // 表定+到 = 正常出席 (深綠實心)
       on_time:           { t: "✓", bg: "#1F5C3A", fg: "#fff", bd: "transparent" },
@@ -2179,14 +2196,19 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
       // 不表定+未點 = 無訓練 (淺灰)
       pending_excused:   { t: "—", bg: "#EAE3D4", fg: "#B7AC93", bd: "transparent" },
     };
-    const s = map[status] || map.pending_excused;
+    let s = map[status] || map.pending_excused;
+    // 遲到時：橘色背景，符號改鐘
+    if (late && (status === "on_time" || status === "bonus")) {
+      s = { t: "🕐", bg: "#E07B30", fg: "#fff", bd: "#A85518" };
+    }
     return (
       <span style={{
         display: "inline-block", width: 16, height: 16,
         background: s.bg, color: s.fg, borderRadius: 3,
         border: `1px solid ${s.bd}`,
-        fontSize: 11, fontWeight: 900, textAlign: "center",
-        lineHeight: "14px", fontFamily: "system-ui, sans-serif",
+        fontSize: late ? 9 : 11, fontWeight: 900, textAlign: "center",
+        lineHeight: late ? "13px" : "14px",
+        fontFamily: "system-ui, sans-serif",
         boxSizing: "border-box",
       }}>{s.t}</span>
     );
@@ -2204,8 +2226,12 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
     const allExcused = !m.amSch && !m.pmSch;
     const hasNoShow = m.amStatus === "no_show" || m.pmStatus === "no_show";
     const hasBonus = m.amStatus === "bonus" || m.pmStatus === "bonus";
+    const hasLate = (m.amLate && (m.amStatus === "on_time" || m.amStatus === "bonus")) ||
+                    (m.pmLate && (m.pmStatus === "on_time" || m.pmStatus === "bonus"));
+    const hasNote = !!(m.amNote || m.pmNote);
     let rowBg = "transparent";
     if (hasNoShow) rowBg = "#FBEEEA";
+    else if (hasLate) rowBg = "#FBF1E8";
     else if (hasBonus) rowBg = "#EEF1F8";
     return (
       <div style={{
@@ -2216,15 +2242,23 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
         borderBottom: "1px solid #EAE3D4",
         opacity: allExcused ? 0.5 : 1,
         background: rowBg,
+        // 遲到時用左邊橘條
+        boxShadow: hasLate && !hasNoShow ? "inset 3px 0 0 #E07B30" : "none",
       }}>
         <span style={{ background: gradeBar(m.grade), height: 10, borderRadius: 1 }} />
         <span className="num" style={{ fontSize: 9, color: "#8B8275" }}>{pad(m.seq)}</span>
         <span style={{
-          fontSize: 12, fontWeight: hasNoShow ? 700 : 500, color: hasNoShow ? "#7A1F0F" : "#141210",
+          fontSize: 12, fontWeight: hasNoShow ? 700 : 500,
+          color: hasNoShow ? "#7A1F0F" : "#141210",
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-        }}>{m.name}</span>
-        <Tiny status={m.amStatus} />
-        <Tiny status={m.pmStatus} />
+        }}>
+          {m.name}
+          {hasNote && (
+            <span style={{ marginLeft: 3, fontSize: 9 }} title="有備註">📝</span>
+          )}
+        </span>
+        <Tiny status={m.amStatus} late={m.amLate} />
+        <Tiny status={m.pmStatus} late={m.pmLate} />
       </div>
     );
   };
@@ -2300,6 +2334,9 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
               {amS.no > 0 && (
                 <span className="num" style={{ color: "#B23A28", fontWeight: 700 }}>缺{amS.no}</span>
               )}
+              {amS.late > 0 && (
+                <span className="num" style={{ color: "#E07B30", fontWeight: 700 }}>遲{amS.late}</span>
+              )}
               {amS.pn > 0 && (
                 <span className="num" style={{ color: "#B8860B", fontWeight: 700 }}>待{amS.pn}</span>
               )}
@@ -2312,11 +2349,28 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
               {pmS.no > 0 && (
                 <span className="num" style={{ color: "#B23A28", fontWeight: 700 }}>缺{pmS.no}</span>
               )}
+              {pmS.late > 0 && (
+                <span className="num" style={{ color: "#E07B30", fontWeight: 700 }}>遲{pmS.late}</span>
+              )}
               {pmS.pn > 0 && (
                 <span className="num" style={{ color: "#B8860B", fontWeight: 700 }}>待{pmS.pn}</span>
               )}
             </div>
           </div>
+
+          {/* 整日備註橫條（如有） */}
+          {dayNote && (
+            <div style={{
+              background: "#FFF7DC", padding: "5px 12px",
+              borderBottom: "1px solid #DDD3BF",
+              fontSize: 10, color: "#5C4810", lineHeight: 1.4,
+              display: "flex", gap: 4, alignItems: "flex-start",
+            }}>
+              <span style={{ fontSize: 10, marginTop: 1 }}>📝</span>
+              <span style={{ letterSpacing: "0.05em", fontWeight: 700, marginRight: 2, flexShrink: 0 }}>今日：</span>
+              <span style={{ fontWeight: 500, whiteSpace: "pre-wrap", flex: 1 }}>{dayNote}</span>
+            </div>
+          )}
 
           {/* Absent line if any */}
           {absentees.length > 0 && (
@@ -2339,6 +2393,34 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
             </div>
           )}
 
+          {/* 遲到清單橫條（如有） */}
+          {latees.length > 0 && (
+            <div style={{
+              background: "#FBE5D2", padding: "5px 12px",
+              borderBottom: "1px solid #DDD3BF",
+              fontSize: 10, color: "#A85518", fontWeight: 600,
+              lineHeight: 1.4,
+            }}>
+              <span style={{ letterSpacing: "0.1em", marginRight: 4 }}>🕐 遲到未下水：</span>
+              {latees.map((r, i) => {
+                const both = r.amLate && r.pmLate &&
+                             (r.amStatus === "on_time" || r.amStatus === "bonus") &&
+                             (r.pmStatus === "on_time" || r.pmStatus === "bonus");
+                const onlyAm = r.amLate && (r.amStatus === "on_time" || r.amStatus === "bonus");
+                const onlyPm = r.pmLate && (r.pmStatus === "on_time" || r.pmStatus === "bonus");
+                return (
+                  <span key={r.seq}>
+                    {i > 0 && "、"}
+                    {r.name}
+                    {both && "(整日)"}
+                    {!both && onlyAm && "(早)"}
+                    {!both && onlyPm && "(午)"}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
           {/* Pending warning - 待點名提醒 */}
           {pendingees.length > 0 && (
             <div style={{
@@ -2358,7 +2440,7 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
             </div>
           )}
 
-          {/* 4-state legend - VERY VISIBLE */}
+          {/* state legend - VERY VISIBLE */}
           <div style={{
             background: "#FFFCF6", padding: "7px 10px",
             borderBottom: "1px solid #DDD3BF",
@@ -2381,6 +2463,18 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
               <Tiny status="confirmed_excused" />
               <span style={{ color: "#5A5142", fontWeight: 700 }}>沒排+沒到（請假）</span>
             </div>
+            {latees.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <Tiny status="on_time" late={true} />
+                <span style={{ color: "#A85518", fontWeight: 700 }}>遲到未下水</span>
+              </div>
+            )}
+            {notedRows.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <span style={{ fontSize: 10 }}>📝</span>
+                <span style={{ color: "#5C4810", fontWeight: 700 }}>姓名旁=有備註</span>
+              </div>
+            )}
           </div>
 
           {/* Mini column header */}
@@ -2414,6 +2508,29 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
               {col2.map(m => <Row key={m.seq} m={m} />)}
             </div>
           </div>
+
+          {/* 個人備註摘要（如有） */}
+          {notedRows.length > 0 && (
+            <div style={{
+              background: "#FFFBEF", padding: "6px 10px",
+              borderTop: "1px solid #EAE3D4",
+              fontSize: 10, color: "#5C4810", lineHeight: 1.5,
+            }}>
+              <div style={{ letterSpacing: "0.1em", fontWeight: 700, marginBottom: 3, fontSize: 9 }}>
+                📝 個人備註
+              </div>
+              {notedRows.map(r => (
+                <div key={r.seq} style={{ display: "flex", gap: 4, marginBottom: 1 }}>
+                  <span style={{ fontWeight: 700, flexShrink: 0 }}>{r.name}：</span>
+                  <span style={{ flex: 1 }}>
+                    {r.amNote && <span><span style={{ color: "#8B8275" }}>(早) </span>{r.amNote}</span>}
+                    {r.amNote && r.pmNote && <span style={{ margin: "0 4px", color: "#8B8275" }}>·</span>}
+                    {r.pmNote && <span><span style={{ color: "#8B8275" }}>(午) </span>{r.pmNote}</span>}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Compact footer - only grade legend + pending hint */}
           <div style={{
