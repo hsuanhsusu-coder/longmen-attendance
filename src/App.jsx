@@ -402,16 +402,22 @@ function AttendanceApp({ user }) {
   };
 
   const exportAll = () => {
+    const csvSafe = (s) => `"${(s || "").replace(/"/g, '""')}"`;
     const lines = [
-      ["日期", "星期", "時段", "序號", "班級", "座號", "姓名", "年級", "表定", "實際"].join(",")
+      ["日期", "星期", "時段", "序號", "班級", "座號", "姓名", "年級", "表定", "實際", "遲到", "備註"].join(",")
     ];
     TRAINING_DAYS.forEach((day) => {
+      const dayData = attendance[day.dateStr] || {};
       ["am", "pm"].forEach((per) => {
         const idx = per === "am" ? day.info.amIdx : day.info.pmIdx;
-        const slot = attendance[day.dateStr]?.[per] || {};
+        const slot = dayData[per] || {};
+        const lateSlot = dayData[per === "am" ? "am_late" : "pm_late"] || {};
+        const noteSlot = dayData[per === "am" ? "am_notes" : "pm_notes"] || {};
         roster.forEach((p) => {
           const sch = p.sch[idx] === 1;
           const ac = slot[p.seq];
+          const isLate = !!lateSlot[p.seq];
+          const note = noteSlot[p.seq] || "";
           lines.push([
             day.dateStr, day.info.dayLabel,
             per === "am" ? "早訓" : "午訓",
@@ -419,9 +425,15 @@ function AttendanceApp({ user }) {
             GRADE_NAMES[p.grade],
             sch ? "出席" : "不出席",
             ac === "present" ? "出席" : ac === "absent" ? "未到" : "未點名",
+            isLate ? "是" : "",
+            csvSafe(note),
           ].join(","));
         });
       });
+      // 整日備註單獨一行
+      if (dayData.notes) {
+        lines.push([day.dateStr, day.info.dayLabel, "整日備註", "", "", "", "", "", "", "", "", csvSafe(dayData.notes)].join(","));
+      }
     });
     const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -754,18 +766,25 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
   const periodLabel = period === "am" ? "早訓" : "午訓";
   const fullLabel = `${dateInfo.dayLabel}${periodLabel}${dateInfo.isSat ? "(永運)" : ""}`;
   const sessionAtt = attendance[selectedDate]?.[period] || {};
+  const lateKey = period === "am" ? "am_late" : "pm_late";
+  const notesKey = period === "am" ? "am_notes" : "pm_notes";
+  const sessionLate = attendance[selectedDate]?.[lateKey] || {};
+  const sessionNotes = attendance[selectedDate]?.[notesKey] || {};
+  const dayNote = attendance[selectedDate]?.notes || "";
 
   const rows = useMemo(() => roster.map(p => {
     const scheduled = p.sch[sessionIdx] === 1;
     const actual = sessionAtt[p.seq] || null;
+    const late = !!sessionLate[p.seq];
+    const note = sessionNotes[p.seq] || "";
     let status = "pending_excused";
     if (scheduled && actual === "present") status = "on_time";
     else if (scheduled && actual === "absent") status = "no_show";
     else if (!scheduled && actual === "present") status = "bonus";
     else if (!scheduled && actual === "absent") status = "confirmed_excused";
     else if (scheduled && !actual) status = "pending";
-    return { ...p, scheduled, actual, status };
-  }), [sessionIdx, sessionAtt]);
+    return { ...p, scheduled, actual, status, late, note };
+  }), [sessionIdx, sessionAtt, sessionLate, sessionNotes, roster]);
 
   const stats = useMemo(() => ({
     scheduledTotal: rows.filter(r => r.scheduled).length,
@@ -796,6 +815,13 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
       if (slot[seq] === st) { delete slot[seq]; after = null; }
       else { slot[seq] = st; after = st; }
       day[period] = slot;
+      // 切換到非 present 時順便清掉 late 標記
+      const lateKey = period === "am" ? "am_late" : "pm_late";
+      const lateSlot = { ...(day[lateKey] || {}) };
+      if (after !== "present" && lateSlot[seq]) {
+        delete lateSlot[seq];
+        day[lateKey] = lateSlot;
+      }
       return { ...prev, [selectedDate]: day };
     }, {
       dateStr: selectedDate,
@@ -804,6 +830,78 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
         targetLabel: `${selectedDate} ${period === "am" ? "早訓" : "午訓"} - ${person?.name || `#${seq}`}`,
         before: { value: before },
         after: { value: st === before ? null : st },
+      },
+    });
+  };
+
+  // 切換「遲到未下水」標記（僅當該人 status === "present" 時生效）
+  const markLate = (seq) => {
+    if (locked) { triggerLockedAlert(); return; }
+    const person = ROSTER_lookup(roster, seq);
+    const lateKey = period === "am" ? "am_late" : "pm_late";
+    const beforeLate = !!(attendance[selectedDate]?.[lateKey]?.[seq]);
+    setAttendance(prev => {
+      const day = { ...(prev[selectedDate] || {}) };
+      const lateSlot = { ...(day[lateKey] || {}) };
+      if (lateSlot[seq]) { delete lateSlot[seq]; }
+      else { lateSlot[seq] = true; }
+      day[lateKey] = lateSlot;
+      return { ...prev, [selectedDate]: day };
+    }, {
+      dateStr: selectedDate,
+      logPayload: {
+        target: `attendance/${selectedDate}/${period}/${seq}/late`,
+        targetLabel: `${selectedDate} ${period === "am" ? "早訓" : "午訓"} - ${person?.name || `#${seq}`} - 遲到標記`,
+        before: { late: beforeLate },
+        after: { late: !beforeLate },
+      },
+    });
+  };
+
+  // 設定 / 清空個人備註
+  const setPersonNote = (seq, text) => {
+    if (locked) { triggerLockedAlert(); return; }
+    const person = ROSTER_lookup(roster, seq);
+    const notesKey = period === "am" ? "am_notes" : "pm_notes";
+    const beforeNote = attendance[selectedDate]?.[notesKey]?.[seq] || "";
+    const trimmed = (text || "").trim();
+    if (beforeNote === trimmed) return; // 沒變不做
+    setAttendance(prev => {
+      const day = { ...(prev[selectedDate] || {}) };
+      const notesSlot = { ...(day[notesKey] || {}) };
+      if (trimmed === "") { delete notesSlot[seq]; }
+      else { notesSlot[seq] = trimmed; }
+      day[notesKey] = notesSlot;
+      return { ...prev, [selectedDate]: day };
+    }, {
+      dateStr: selectedDate,
+      logPayload: {
+        target: `attendance/${selectedDate}/${period}/${seq}/note`,
+        targetLabel: `${selectedDate} ${period === "am" ? "早訓" : "午訓"} - ${person?.name || `#${seq}`} - 個人備註`,
+        before: { note: beforeNote },
+        after: { note: trimmed },
+      },
+    });
+  };
+
+  // 整日備註（不分早午訓）
+  const setDayNote = (text) => {
+    if (locked) { triggerLockedAlert(); return; }
+    const beforeNote = attendance[selectedDate]?.notes || "";
+    const trimmed = (text || "").trim();
+    if (beforeNote === trimmed) return;
+    setAttendance(prev => {
+      const day = { ...(prev[selectedDate] || {}) };
+      if (trimmed === "") { delete day.notes; }
+      else { day.notes = trimmed; }
+      return { ...prev, [selectedDate]: day };
+    }, {
+      dateStr: selectedDate,
+      logPayload: {
+        target: `attendance/${selectedDate}/notes`,
+        targetLabel: `${selectedDate} - 整日備註`,
+        before: { note: beforeNote },
+        after: { note: trimmed },
       },
     });
   };
@@ -855,14 +953,18 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
     });
   };
   const exportSession = () => {
+    const csvSafe = (s) => `"${(s || "").replace(/"/g, '""')}"`;
     const lines = [
-      ["序號", "班級", "座號", "姓名", "年級", "表定", "實際"].join(","),
+      ["序號", "班級", "座號", "姓名", "年級", "表定", "實際", "遲到", "備註"].join(","),
       ...rows.map(r => [
         r.seq, r.cls, r.num, r.name, GRADE_NAMES[r.grade],
         r.scheduled ? "出席" : "不出席",
         r.actual === "present" ? "出席" : r.actual === "absent" ? "未到" : "未點名",
+        r.late ? "是" : "",
+        csvSafe(r.note),
       ].join(","))
     ];
+    if (dayNote) lines.push(`整日備註,${csvSafe(dayNote)}`);
     const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -990,6 +1092,9 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
         <StatCard tag="RATE" label="出席率" value={rate} sub="%" color="var(--ink)" ring={rate} />
       </section>
 
+      {/* 整日備註 */}
+      <DayNoteSection dayNote={dayNote} setDayNote={setDayNote} locked={locked} />
+
       {(stats.pending > 0 || stats.bonus > 0) && (
         <div className="flex flex-wrap gap-2">
           {stats.pending > 0 && (
@@ -1080,7 +1185,7 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
               <div className="flex-1 border-b border-dashed" style={{ borderColor: "var(--line-strong)" }} />
             </div>
             <div className="space-y-2">
-              {g.members.map(m => <CallRow key={m.seq} m={m} mark={mark} />)}
+              {g.members.map(m => <CallRow key={m.seq} m={m} mark={mark} markLate={markLate} setPersonNote={setPersonNote} />)}
             </div>
           </div>
         ))}
@@ -1108,9 +1213,15 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
   );
 }
 
-function CallRow({ m, mark }) {
+function CallRow({ m, mark, markLate, setPersonNote }) {
   const isPresent = m.actual === "present";
   const isAbsent = m.actual === "absent";
+  const [showNote, setShowNote] = useState(!!m.note);
+  const [noteText, setNoteText] = useState(m.note || "");
+
+  // 同步外部 note 變動
+  useEffect(() => { setNoteText(m.note || ""); setShowNote(!!m.note || showNote); }, [m.note]);
+
   let bg = "var(--panel)", bd = "var(--line)", dim = 1;
   if (m.status === "on_time") { bg = "var(--green-bg)"; bd = "var(--green)"; }
   else if (m.status === "no_show") { bg = "var(--red-bg)"; bd = "var(--red)"; }
@@ -1119,67 +1230,201 @@ function CallRow({ m, mark }) {
   else if (m.status === "bonus") { bg = "var(--blue-bg)"; bd = "var(--blue)"; }
   else if (m.status === "confirmed_excused") { bg = "var(--panel-2)"; bd = "var(--line-strong)"; dim = 0.7; }
 
+  // 遲到時用橘色框框
+  if (m.late && isPresent) { bd = "#E07B30"; bg = "rgba(224, 123, 48, 0.08)"; }
+
   let actualLabel = null;
-  if (m.status === "on_time") actualLabel = { t: "✓ 實際出席", b: "var(--green)", f: "#fff" };
+  if (m.status === "on_time") actualLabel = { t: m.late ? "✓ 出席（遲到）" : "✓ 實際出席", b: m.late ? "#E07B30" : "var(--green)", f: "#fff" };
   else if (m.status === "no_show") actualLabel = { t: "✗ 未到", b: "var(--red)", f: "#fff" };
-  else if (m.status === "bonus") actualLabel = { t: "+ 補訓出席", b: "var(--blue)", f: "#fff" };
+  else if (m.status === "bonus") actualLabel = { t: m.late ? "+ 補訓（遲到）" : "+ 補訓出席", b: m.late ? "#E07B30" : "var(--blue)", f: "#fff" };
   else if (m.status === "confirmed_excused") actualLabel = { t: "已確認請假", b: "var(--ink-2)", f: "#fff" };
 
+  const handleNoteBlur = () => {
+    if (noteText !== (m.note || "")) {
+      setPersonNote(m.seq, noteText);
+    }
+  };
+  const clearNote = () => {
+    setNoteText("");
+    setPersonNote(m.seq, "");
+    setShowNote(false);
+  };
+
   return (
-    <div className="row-fade-in flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl border-2"
+    <div className="row-fade-in flex flex-col gap-1.5 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl border-2"
          style={{ background: bg, borderColor: bd, opacity: dim, transition: "all 0.2s" }}>
-      <div className="num text-[11px] sm:text-xs tabular-nums shrink-0"
-           style={{ color: "var(--mute)", minWidth: "22px" }}>{pad(m.seq)}</div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-baseline gap-2 flex-wrap">
-          <span className="text-base sm:text-lg font-medium truncate" style={{ color: "var(--ink)" }}>{m.name}</span>
-          <span className="num text-[10px] sm:text-xs" style={{ color: "var(--mute)" }}>{m.cls}-{pad(m.num)}</span>
-        </div>
-        <div className="flex items-center gap-1 mt-1 flex-wrap">
-          <span className="text-[10px] sm:text-xs px-1.5 py-0.5 rounded font-medium"
-                style={{
-                  background: m.scheduled ? "var(--green)" : "transparent",
-                  color: m.scheduled ? "#fff" : "var(--mute)",
-                  border: `1px solid ${m.scheduled ? "var(--green)" : "var(--line-strong)"}`,
-                }}>
-            {m.scheduled ? "● 表定出席" : "○ 表定不出席"}
-          </span>
-          {actualLabel && (
+      <div className="flex items-center gap-2 sm:gap-3">
+        <div className="num text-[11px] sm:text-xs tabular-nums shrink-0"
+             style={{ color: "var(--mute)", minWidth: "22px" }}>{pad(m.seq)}</div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="text-base sm:text-lg font-medium truncate" style={{ color: "var(--ink)" }}>{m.name}</span>
+            <span className="num text-[10px] sm:text-xs" style={{ color: "var(--mute)" }}>{m.cls}-{pad(m.num)}</span>
+          </div>
+          <div className="flex items-center gap-1 mt-1 flex-wrap">
             <span className="text-[10px] sm:text-xs px-1.5 py-0.5 rounded font-medium"
-                  style={{ background: actualLabel.b, color: actualLabel.f }}>
-              {actualLabel.t}
+                  style={{
+                    background: m.scheduled ? "var(--green)" : "transparent",
+                    color: m.scheduled ? "#fff" : "var(--mute)",
+                    border: `1px solid ${m.scheduled ? "var(--green)" : "var(--line-strong)"}`,
+                  }}>
+              {m.scheduled ? "● 表定出席" : "○ 表定不出席"}
             </span>
-          )}
-          {m.status === "pending" && (
-            <span className="text-[10px] sm:text-xs px-1.5 py-0.5 rounded font-medium flex items-center gap-1"
-                  style={{ color: "var(--amber)" }}>
-              <span className="pulse-dot" style={{ background: "var(--amber)" }} />
-              待點名
-            </span>
-          )}
+            {actualLabel && (
+              <span className="text-[10px] sm:text-xs px-1.5 py-0.5 rounded font-medium"
+                    style={{ background: actualLabel.b, color: actualLabel.f }}>
+                {actualLabel.t}
+              </span>
+            )}
+            {m.status === "pending" && (
+              <span className="text-[10px] sm:text-xs px-1.5 py-0.5 rounded font-medium flex items-center gap-1"
+                    style={{ color: "var(--amber)" }}>
+                <span className="pulse-dot" style={{ background: "var(--amber)" }} />
+                待點名
+              </span>
+            )}
+            {m.note && !showNote && (
+              <button onClick={() => setShowNote(true)}
+                      className="text-[10px] sm:text-xs px-1.5 py-0.5 rounded font-medium"
+                      style={{ background: "var(--amber-bg)", color: "#5C4810", border: "1px dashed var(--amber)" }}
+                      title="有備註，點擊查看">
+                📝 有備註
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="flex gap-1 sm:gap-1.5 shrink-0">
+          <button onClick={() => mark(m.seq, "present")}
+                  className="btn-tactile w-9 h-9 sm:w-11 sm:h-11 rounded-lg flex items-center justify-center"
+                  style={{
+                    background: isPresent ? "var(--green)" : "transparent",
+                    color: isPresent ? "#fff" : "var(--green)",
+                    border: `2px solid var(--green)`,
+                  }} title="出席">
+            <Check size={18} strokeWidth={3.5} />
+          </button>
+          <button onClick={() => mark(m.seq, "absent")}
+                  className="btn-tactile w-9 h-9 sm:w-11 sm:h-11 rounded-lg flex items-center justify-center"
+                  style={{
+                    background: isAbsent ? "var(--red)" : "transparent",
+                    color: isAbsent ? "#fff" : "var(--red)",
+                    border: `2px solid var(--red)`,
+                  }} title="未到">
+            <X size={18} strokeWidth={3.5} />
+          </button>
         </div>
       </div>
-      <div className="flex gap-1 sm:gap-1.5 shrink-0">
-        <button onClick={() => mark(m.seq, "present")}
-                className="btn-tactile w-9 h-9 sm:w-11 sm:h-11 rounded-lg flex items-center justify-center"
-                style={{
-                  background: isPresent ? "var(--green)" : "transparent",
-                  color: isPresent ? "#fff" : "var(--green)",
-                  border: `2px solid var(--green)`,
-                }} title="出席">
-          <Check size={18} strokeWidth={3.5} />
-        </button>
-        <button onClick={() => mark(m.seq, "absent")}
-                className="btn-tactile w-9 h-9 sm:w-11 sm:h-11 rounded-lg flex items-center justify-center"
-                style={{
-                  background: isAbsent ? "var(--red)" : "transparent",
-                  color: isAbsent ? "#fff" : "var(--red)",
-                  border: `2px solid var(--red)`,
-                }} title="未到">
-          <X size={18} strokeWidth={3.5} />
-        </button>
-      </div>
+
+      {/* 遲到標記（出席時才顯示） */}
+      {isPresent && (
+        <div className="flex items-center gap-3 ml-7 flex-wrap">
+          <button onClick={() => markLate(m.seq)}
+                  className="btn-tactile flex items-center gap-1.5 px-2 py-1 rounded text-[11px] sm:text-xs font-medium"
+                  style={{
+                    background: m.late ? "#E07B30" : "transparent",
+                    color: m.late ? "#fff" : "#E07B30",
+                    border: `1.5px solid #E07B30`,
+                  }}>
+            <span style={{ fontSize: 11 }}>{m.late ? "✓" : "○"}</span>
+            遲到未下水
+          </button>
+          {!showNote && (
+            <button onClick={() => setShowNote(true)}
+                    className="btn-tactile text-[11px] sm:text-xs px-2 py-1 rounded"
+                    style={{ color: "var(--mute)", border: "1px dashed var(--line-strong)" }}>
+              + 加備註
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 對「未到 / 未點名」也允許加備註 */}
+      {!isPresent && !showNote && m.status !== "pending_excused" && (
+        <div className="ml-7">
+          <button onClick={() => setShowNote(true)}
+                  className="btn-tactile text-[11px] sm:text-xs px-2 py-1 rounded"
+                  style={{ color: "var(--mute)", border: "1px dashed var(--line-strong)" }}>
+            + 加備註
+          </button>
+        </div>
+      )}
+
+      {/* 備註輸入框 */}
+      {showNote && (
+        <div className="flex items-center gap-1.5 ml-7">
+          <span className="text-[11px] shrink-0" style={{ color: "var(--mute)" }}>📝</span>
+          <input type="text" value={noteText}
+                 onChange={e => setNoteText(e.target.value)}
+                 onBlur={handleNoteBlur}
+                 onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }}
+                 placeholder="例：腳痛 / 家庭因素 / 比賽請假..."
+                 className="flex-1 px-2 py-1 rounded text-[12px] sm:text-sm"
+                 style={{ border: "1px solid var(--line-strong)", background: "var(--panel)", color: "var(--ink)" }} />
+          <button onClick={clearNote}
+                  className="btn-tactile w-6 h-6 rounded flex items-center justify-center shrink-0"
+                  style={{ color: "var(--mute)", border: "1px solid var(--line-strong)" }}
+                  title="清空備註">
+            <X size={12} strokeWidth={2.5} />
+          </button>
+        </div>
+      )}
     </div>
+  );
+}
+
+// ============ 整日備註區塊 ============
+function DayNoteSection({ dayNote, setDayNote, locked }) {
+  const [text, setText] = useState(dayNote);
+  const [expanded, setExpanded] = useState(!!dayNote);
+  useEffect(() => { setText(dayNote); setExpanded(!!dayNote || expanded); }, [dayNote]);
+
+  const onBlur = () => { if (text !== dayNote) setDayNote(text); };
+  const clear = () => { setText(""); setDayNote(""); setExpanded(false); };
+
+  if (!expanded) {
+    return (
+      <button onClick={() => setExpanded(true)} disabled={locked}
+              className="btn-tactile flex items-center gap-2 px-3 py-2 rounded-lg text-xs sm:text-sm border"
+              style={{
+                background: "var(--panel)", borderColor: "var(--line-strong)",
+                color: locked ? "var(--mute)" : "var(--ink-2)",
+                cursor: locked ? "not-allowed" : "pointer", opacity: locked ? 0.5 : 1,
+              }}>
+        <span style={{ fontSize: 14 }}>📝</span>
+        <span>新增整日備註</span>
+        <span className="text-[10px]" style={{ color: "var(--mute)" }}>（如：今日清晨大雨等）</span>
+      </button>
+    );
+  }
+
+  return (
+    <section className="rounded-xl p-3 sm:p-4 border-2"
+             style={{ background: "var(--amber-bg)", borderColor: "var(--amber)" }}>
+      <div className="flex items-start gap-2">
+        <span style={{ fontSize: 16, marginTop: 2 }}>📝</span>
+        <div className="flex-1">
+          <div className="flex items-center justify-between mb-1.5 gap-2">
+            <span className="text-[11px] tk-l font-medium" style={{ color: "#5C4810" }}>
+              整日備註
+            </span>
+            <button onClick={clear} disabled={locked}
+                    className="btn-tactile w-6 h-6 rounded flex items-center justify-center"
+                    style={{ color: "#5C4810", border: "1px solid #5C4810", opacity: locked ? 0.4 : 1 }}
+                    title="清空">
+              <X size={12} strokeWidth={2.5} />
+            </button>
+          </div>
+          <textarea value={text} onChange={e => setText(e.target.value)}
+                    onBlur={onBlur} disabled={locked}
+                    placeholder="例如：今日清晨大雨，多人請假；下午練習改為室內陸操..."
+                    className="w-full px-2 py-1.5 rounded text-sm resize-none"
+                    style={{
+                      border: "1px solid #5C4810", background: "var(--panel)", color: "var(--ink)",
+                      minHeight: 60,
+                    }} />
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -1208,12 +1453,23 @@ function DailyView({ selectedDate, setSelectedDate, attendance, setTab, setPerio
     return "pending_excused";
   };
 
+  const amLate = attendance[selectedDate]?.am_late || {};
+  const pmLate = attendance[selectedDate]?.pm_late || {};
+  const amNotes = attendance[selectedDate]?.am_notes || {};
+  const pmNotes = attendance[selectedDate]?.pm_notes || {};
+  const dayNote = attendance[selectedDate]?.notes || "";
+
   const rows = roster.map(p => {
     const amSch = p.sch[dateInfo.amIdx] === 1;
     const pmSch = p.sch[dateInfo.pmIdx] === 1;
     const amStatus = computeStatus(amSch, amAtt[p.seq]);
     const pmStatus = computeStatus(pmSch, pmAtt[p.seq]);
-    return { ...p, amSch, pmSch, amStatus, pmStatus, amActual: amAtt[p.seq], pmActual: pmAtt[p.seq] };
+    return {
+      ...p, amSch, pmSch, amStatus, pmStatus,
+      amActual: amAtt[p.seq], pmActual: pmAtt[p.seq],
+      amLate: !!amLate[p.seq], pmLate: !!pmLate[p.seq],
+      amNote: amNotes[p.seq] || "", pmNote: pmNotes[p.seq] || "",
+    };
   });
 
   const cnt = (sel) => rows.filter(sel).length;
@@ -1233,16 +1489,25 @@ function DailyView({ selectedDate, setSelectedDate, attendance, setTab, setPerio
   };
 
   const exportDay = () => {
+    const csvSafe = (s) => `"${(s || "").replace(/"/g, '""')}"`;
     const lines = [
-      ["序號","班級","座號","姓名","年級","早訓表定","早訓實際","午訓表定","午訓實際"].join(",")
+      ["序號","班級","座號","姓名","年級","早訓表定","早訓實際","早訓遲到","早訓備註","午訓表定","午訓實際","午訓遲到","午訓備註"].join(",")
     ];
     rows.forEach(r => lines.push([
       r.seq, r.cls, r.num, r.name, GRADE_NAMES[r.grade],
       r.amSch ? "出席" : "不出席",
       r.amActual === "present" ? "出席" : r.amActual === "absent" ? "未到" : "未點名",
+      r.amLate ? "是" : "",
+      csvSafe(r.amNote),
       r.pmSch ? "出席" : "不出席",
       r.pmActual === "present" ? "出席" : r.pmActual === "absent" ? "未到" : "未點名",
+      r.pmLate ? "是" : "",
+      csvSafe(r.pmNote),
     ].join(",")));
+    if (dayNote) {
+      lines.push("");
+      lines.push(`整日備註,${csvSafe(dayNote)}`);
+    }
     const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1338,6 +1603,24 @@ function DailyView({ selectedDate, setSelectedDate, attendance, setTab, setPerio
         <DaySessionSummary label="午訓" Ic={Moon} stats={pmStats} onClick={() => goCallSession("pm")} />
       </section>
 
+      {/* 整日備註展示（如果有） */}
+      {dayNote && (
+        <section className="rounded-xl p-3 sm:p-4 border-2"
+                 style={{ background: "var(--amber-bg)", borderColor: "var(--amber)" }}>
+          <div className="flex items-start gap-2">
+            <span style={{ fontSize: 14, marginTop: 2 }}>📝</span>
+            <div className="flex-1">
+              <div className="text-[10px] tk-l mb-1" style={{ color: "#5C4810" }}>
+                當日整體備註
+              </div>
+              <div className="text-sm" style={{ color: "#5C4810", whiteSpace: "pre-wrap" }}>
+                {dayNote}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
       <button onClick={() => setScreenshotMode(true)}
               className="btn-tactile w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 font-medium"
               style={{ borderColor: "var(--accent)", background: "var(--accent)", color: "#fff" }}>
@@ -1401,7 +1684,7 @@ function DailyTableHeader() {
   return (
     <div className="grid items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5"
          style={{
-           gridTemplateColumns: "32px 1fr minmax(85px,1fr) minmax(85px,1fr)",
+           gridTemplateColumns: "32px 1fr minmax(85px,1fr) minmax(85px,1fr) 30px",
            background: "var(--ink)",
            color: "var(--bg)",
          }}>
@@ -1413,6 +1696,7 @@ function DailyTableHeader() {
       <span className="text-[10px] tk-l text-center flex items-center justify-center gap-1">
         <Moon size={11} strokeWidth={2.5} />午訓
       </span>
+      <span className="text-[10px] tk-l text-center" title="備註">📝</span>
     </div>
   );
 }
@@ -1454,12 +1738,14 @@ function DaySessionSummary({ label, Ic, stats, onClick }) {
 }
 
 function DailyRow({ m }) {
-  const renderCell = (status) => {
+  const [showNote, setShowNote] = useState(false);
+
+  const renderCell = (status, late) => {
     let txt = "—", bg = "var(--panel-2)", fg = "var(--mute)";
-    if (status === "on_time") { txt = "✓ 出席"; bg = "var(--green)"; fg = "#fff"; }
+    if (status === "on_time") { txt = late ? "✓ 出席🕐" : "✓ 出席"; bg = late ? "#E07B30" : "var(--green)"; fg = "#fff"; }
     else if (status === "no_show") { txt = "✗ 未到"; bg = "var(--red)"; fg = "#fff"; }
     else if (status === "pending") { txt = "● 待點"; bg = "var(--amber-bg)"; fg = "#5C4810"; }
-    else if (status === "bonus") { txt = "+ 補訓"; bg = "var(--blue)"; fg = "#fff"; }
+    else if (status === "bonus") { txt = late ? "+ 補訓🕐" : "+ 補訓"; bg = late ? "#E07B30" : "var(--blue)"; fg = "#fff"; }
     else if (status === "confirmed_excused") { txt = "○ 請假"; bg = "var(--panel-2)"; fg = "var(--ink-2)"; }
     else if (status === "pending_excused") { txt = "○ 請假"; bg = "transparent"; fg = "var(--mute)"; }
     return (
@@ -1472,28 +1758,55 @@ function DailyRow({ m }) {
 
   const allExcused = !m.amSch && !m.pmSch;
   const dim = allExcused ? 0.55 : 1;
+  const hasNote = !!(m.amNote || m.pmNote);
 
   return (
-    <div className="grid items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2"
-         style={{
-           gridTemplateColumns: "32px 1fr minmax(85px,1fr) minmax(85px,1fr)",
-           opacity: dim,
-           borderBottom: "1px solid var(--line)",
-           background: "var(--panel)",
-         }}>
-      <span className="num text-[11px] sm:text-xs tabular-nums" style={{ color: "var(--mute)" }}>
-        {pad(m.seq)}
-      </span>
-      <div className="min-w-0">
-        <div className="text-sm sm:text-base font-medium truncate" style={{ color: "var(--ink)" }}>
-          {m.name}
+    <div style={{ borderBottom: "1px solid var(--line)" }}>
+      <div className="grid items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2"
+           style={{
+             gridTemplateColumns: "32px 1fr minmax(85px,1fr) minmax(85px,1fr) 30px",
+             opacity: dim,
+             background: "var(--panel)",
+           }}>
+        <span className="num text-[11px] sm:text-xs tabular-nums" style={{ color: "var(--mute)" }}>
+          {pad(m.seq)}
+        </span>
+        <div className="min-w-0">
+          <div className="text-sm sm:text-base font-medium truncate" style={{ color: "var(--ink)" }}>
+            {m.name}
+          </div>
+          <div className="num text-[10px]" style={{ color: "var(--mute)" }}>
+            {m.cls}-{pad(m.num)}
+          </div>
         </div>
-        <div className="num text-[10px]" style={{ color: "var(--mute)" }}>
-          {m.cls}-{pad(m.num)}
-        </div>
+        {renderCell(m.amStatus, m.amLate)}
+        {renderCell(m.pmStatus, m.pmLate)}
+        {hasNote ? (
+          <button onClick={() => setShowNote(s => !s)}
+                  className="btn-tactile w-7 h-7 rounded flex items-center justify-center"
+                  style={{ background: showNote ? "var(--amber)" : "var(--amber-bg)", color: "#5C4810", border: "1px solid var(--amber)" }}
+                  title="點擊查看備註">
+            📝
+          </button>
+        ) : <span />}
       </div>
-      {renderCell(m.amStatus)}
-      {renderCell(m.pmStatus)}
+      {showNote && hasNote && (
+        <div className="px-3 sm:px-4 py-2 text-[11px] sm:text-xs"
+             style={{ background: "var(--amber-bg)", borderTop: "1px solid var(--amber)" }}>
+          {m.amNote && (
+            <div className="flex gap-2" style={{ color: "#5C4810" }}>
+              <span className="font-medium shrink-0">早訓備註：</span>
+              <span>{m.amNote}</span>
+            </div>
+          )}
+          {m.pmNote && (
+            <div className="flex gap-2 mt-0.5" style={{ color: "#5C4810" }}>
+              <span className="font-medium shrink-0">午訓備註：</span>
+              <span>{m.pmNote}</span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1502,35 +1815,38 @@ function DailyRow({ m }) {
 function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS }) {
   const { roster } = useRoster();
   const personStats = useMemo(() => roster.map(p => {
-    let scheduled = 0, present = 0, absent = 0, bonus = 0, pending = 0;
+    let scheduled = 0, present = 0, absent = 0, bonus = 0, pending = 0, late = 0;
     const matrix = TRAINING_DAYS.map(day => {
+      const dayData = attendance[day.dateStr] || {};
       const am = (() => {
         const sch = p.sch[day.info.amIdx] === 1;
-        const ac = attendance[day.dateStr]?.am?.[p.seq];
+        const ac = dayData.am?.[p.seq];
+        const isLate = !!dayData.am_late?.[p.seq];
         if (sch) scheduled++;
-        if (sch && ac === "present") { present++; return "on_time"; }
+        if (sch && ac === "present") { present++; if (isLate) late++; return "on_time"; }
         if (sch && ac === "absent") { absent++; return "no_show"; }
         if (sch && !ac) { pending++; return "pending"; }
-        if (!sch && ac === "present") { bonus++; return "bonus"; }
+        if (!sch && ac === "present") { bonus++; if (isLate) late++; return "bonus"; }
         if (!sch && ac === "absent") return "confirmed_excused";
         return "off";
       })();
       const pm = (() => {
         const sch = p.sch[day.info.pmIdx] === 1;
-        const ac = attendance[day.dateStr]?.pm?.[p.seq];
+        const ac = dayData.pm?.[p.seq];
+        const isLate = !!dayData.pm_late?.[p.seq];
         if (sch) scheduled++;
-        if (sch && ac === "present") { present++; return "on_time"; }
+        if (sch && ac === "present") { present++; if (isLate) late++; return "on_time"; }
         if (sch && ac === "absent") { absent++; return "no_show"; }
         if (sch && !ac) { pending++; return "pending"; }
-        if (!sch && ac === "present") { bonus++; return "bonus"; }
+        if (!sch && ac === "present") { bonus++; if (isLate) late++; return "bonus"; }
         if (!sch && ac === "absent") return "confirmed_excused";
         return "off";
       })();
       return { day, am, pm };
     });
     const rate = scheduled === 0 ? 0 : present / scheduled;
-    return { ...p, scheduled, present, absent, bonus, pending, rate, matrix };
-  }), [attendance]);
+    return { ...p, scheduled, present, absent, bonus, pending, late, rate, matrix };
+  }), [attendance, roster, TRAINING_DAYS]);
 
   const team = personStats.reduce((acc, s) => ({
     scheduled: acc.scheduled + s.scheduled,
@@ -1741,6 +2057,7 @@ function PersonMonthRow({ s, onCellClick }) {
         {s.absent > 0 && <span><span style={{ color: "var(--red)" }}>缺席</span> <span className="num font-medium" style={{ color: "var(--red)" }}>{s.absent}</span></span>}
         {s.pending > 0 && <span><span style={{ color: "var(--amber)" }}>待點</span> <span className="num font-medium" style={{ color: "var(--amber)" }}>{s.pending}</span></span>}
         {s.bonus > 0 && <span><span style={{ color: "var(--blue)" }}>補訓</span> <span className="num font-medium" style={{ color: "var(--blue)" }}>{s.bonus}</span></span>}
+        {s.late > 0 && <span><span style={{ color: "#E07B30" }}>遲到</span> <span className="num font-medium" style={{ color: "#E07B30" }}>{s.late}</span></span>}
       </div>
 
       <div className="h-1.5 rounded-full overflow-hidden mb-2" style={{ background: "rgba(0,0,0,0.06)" }}>
