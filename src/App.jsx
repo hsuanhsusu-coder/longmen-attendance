@@ -470,14 +470,27 @@ const getVenue = (attendance, dateStr, period) => {
 const getDateInfo = (dateStr) => {
   const date = fromDateStr(dateStr);
   const dow = date.getDay();
-  if (dow === 0) return { off: true, dow };
-  const dayIdx = dow - 1;
+  // 週一 ~ 週六 = dow 1-6 → dayIdx 0-5
+  // 週日 = dow 0 → 借用週六的時段索引（amIdx=10, pmIdx=11）
+  // 週日預設「不訓練」(off=true)，但若行事曆/手動設定有指定場地，仍可訓練
+  const isSun = dow === 0;
+  const dayIdx = isSun ? 5 : dow - 1;
+  // 判斷週日是否「實質訓練」：行事曆有非 closed 的場地 OR 月曆編輯後設置場地
+  // 為了避免循環依賴（getVenue 需要 attendance），這裡只看 VENUE_CALENDAR
+  let off = isSun;
+  if (isSun) {
+    const calEntry = VENUE_CALENDAR[dateStr];
+    if (calEntry && (calEntry.am !== "closed" || calEntry.pm !== "closed")) {
+      off = false; // 週日有訓練（永運加練等）
+    }
+  }
   return {
-    off: false, dow,
-    dayLabel: DAYS[dayIdx],
+    off, dow,
+    dayLabel: isSun ? "週日" : DAYS[dayIdx],
     amIdx: dayIdx * 2,
     pmIdx: dayIdx * 2 + 1,
     isSat: dow === 6,
+    isSun,
   };
 };
 
@@ -1181,7 +1194,7 @@ function AttendanceApp({ user }) {
           </div>
         </header>
 
-        <TabBar tab={tab} setTab={setTab} isOwner={isOwner} />
+        <TabBar tab={tab} setTab={setTab} isOwner={isOwner} isAdmin={isAdmin} />
 
         <div className="tab-fade">
           {tab === "rollcall" && (
@@ -1221,6 +1234,14 @@ function AttendanceApp({ user }) {
           {tab === "audit" && isOwner && (
             <AuditLogView user={user} logAction={logAction} />
           )}
+          {tab === "calendar_editor" && isAdmin && (
+            <CalendarEditorView
+              attendance={attendance}
+              setAttendance={setAttendance}
+              logAction={logAction}
+              isOwner={isOwner}
+            />
+          )}
           {tab === "settings" && isOwner && (
             <SettingsView
               user={user}
@@ -1246,11 +1267,12 @@ function AttendanceApp({ user }) {
 }
 
 // ============ TAB BAR ============
-function TabBar({ tab, setTab, isOwner }) {
+function TabBar({ tab, setTab, isOwner, isAdmin }) {
   const tabs = [
     { k: "rollcall", l: "點名", icon: ClipboardCheck },
     { k: "daily", l: "每日總覽", icon: ListChecks },
     { k: "monthly", l: "當月統計", icon: BarChart3 },
+    ...(isAdmin ? [{ k: "calendar_editor", l: "行事曆", icon: CalendarDays }] : []),
     { k: "manage", l: "管理", icon: Settings },
     ...(isOwner ? [{ k: "audit", l: "紀錄", icon: History }] : []),
     ...(isOwner ? [{ k: "settings", l: "設定", icon: Settings }] : []),
@@ -2064,7 +2086,8 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
                     color: "var(--accent)",
                   }}
                   title="跳到今天">
-            ⭐ 今天
+            <RotateCcw size={11} strokeWidth={2.5} />
+            回今天
           </button>
         </div>
         <div className="flex items-center gap-2">
@@ -2085,10 +2108,9 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
                  style={{ color: showCalendar ? "var(--bg)" : "var(--ink)" }}>
               {selectedDate.split("-").join(" / ")}
             </div>
-            <div className="num text-xs sm:text-sm flex items-center justify-center gap-1"
-                 style={{ color: showCalendar ? "rgba(255,252,246,0.7)" : "var(--mute)" }}>
+            <div className="num text-sm sm:text-base font-medium"
+                 style={{ color: showCalendar ? "rgba(255,252,246,0.85)" : "var(--ink-2)" }}>
               {dateInfo.dayLabel}
-              <span style={{ opacity: 0.6, fontSize: 10 }}>{showCalendar ? "▲" : "▼"}</span>
             </div>
           </button>
           <button onClick={() => navDate(1)}
@@ -2097,6 +2119,9 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
                   title="下一個訓練日">
             <ChevronRight size={18} strokeWidth={2.5} />
           </button>
+        </div>
+        <div className="text-center text-[11px] mt-1.5" style={{ color: "var(--mute)" }}>
+          {showCalendar ? "點下方月曆選日期" : "點上方日期可切換月份／年份"}
         </div>
         {showCalendar && (
           <div className="mt-3 pt-3 border-t" style={{ borderColor: "var(--line)" }}>
@@ -2739,7 +2764,8 @@ function DailyView({ selectedDate, setSelectedDate, attendance, setTab, setPerio
                       color: "var(--accent)",
                     }}
                     title="跳到今天">
-              ⭐ 今天
+              <RotateCcw size={11} strokeWidth={2.5} />
+              回今天
             </button>
             <button onClick={exportDay}
                     className="btn-tactile flex items-center gap-1 text-[10px] sm:text-xs px-2.5 py-1 rounded-md border"
@@ -2766,10 +2792,9 @@ function DailyView({ selectedDate, setSelectedDate, attendance, setTab, setPerio
                  style={{ color: showCalendar ? "var(--bg)" : "var(--ink)" }}>
               {selectedDate.split("-").join(" / ")}
             </div>
-            <div className="num text-xs sm:text-sm flex items-center justify-center gap-1"
-                 style={{ color: showCalendar ? "rgba(255,252,246,0.7)" : "var(--mute)" }}>
+            <div className="num text-sm sm:text-base font-medium"
+                 style={{ color: showCalendar ? "rgba(255,252,246,0.85)" : "var(--ink-2)" }}>
               {dateInfo.dayLabel}
-              <span style={{ opacity: 0.6, fontSize: 10 }}>{showCalendar ? "▲" : "▼"}</span>
             </div>
           </button>
           <button onClick={() => navDate(1)}
@@ -2777,6 +2802,9 @@ function DailyView({ selectedDate, setSelectedDate, attendance, setTab, setPerio
                   style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
             <ChevronRight size={18} strokeWidth={2.5} />
           </button>
+        </div>
+        <div className="text-center text-[11px] mt-1.5" style={{ color: "var(--mute)" }}>
+          {showCalendar ? "點下方月曆選日期" : "點上方日期可切換月份／年份"}
         </div>
         {showCalendar && (
           <div className="mt-3 pt-3 border-t" style={{ borderColor: "var(--line)" }}>
@@ -5823,6 +5851,486 @@ function SettingsView({ user, attendance, setAttendance, logAction }) {
           <div>🔒 編輯期限：點名後 24 小時可修改（主管理員不受限）</div>
         </div>
       </section>
+    </div>
+  );
+}
+
+// ============ CALENDAR EDITOR VIEW ============
+function CalendarEditorView({ attendance, setAttendance, logAction, isOwner }) {
+  const today = new Date();
+  const [viewY, setViewY] = useState(today.getFullYear());
+  const [viewM, setViewM] = useState(today.getMonth());
+  const [editingDate, setEditingDate] = useState(null); // 正在編輯的日期 dateStr
+  const [confirmOverwrite, setConfirmOverwrite] = useState(null); // 已有點名的覆蓋警告
+  // 正在編輯時的暫存值
+  const [editAm, setEditAm] = useState(null);
+  const [editPm, setEditPm] = useState(null);
+  const [editNote, setEditNote] = useState("");
+
+  // 月份切換
+  const goPrev = () => {
+    const { Y: nY, M: nM } = shiftMonth(viewY, viewM, -1);
+    setViewY(nY); setViewM(nM);
+  };
+  const goNext = () => {
+    const { Y: nY, M: nM } = shiftMonth(viewY, viewM, 1);
+    setViewY(nY); setViewM(nM);
+  };
+  const goToday = () => {
+    setViewY(today.getFullYear());
+    setViewM(today.getMonth());
+  };
+
+  // 一個日期是否「已有點名」
+  const hasAttendanceData = (dateStr) => {
+    const a = attendance[dateStr];
+    if (!a) return false;
+    const checkObj = (o) => o && Object.keys(o).length > 0;
+    return checkObj(a.am) || checkObj(a.pm) || checkObj(a.am_late) || checkObj(a.pm_late) ||
+           checkObj(a.am_solo) || checkObj(a.pm_solo) || checkObj(a.am_notes) || checkObj(a.pm_notes);
+  };
+
+  // 開啟編輯：載入該日當前場地與備註
+  const openEdit = (dateStr) => {
+    const am = getVenue(attendance, dateStr, "am");
+    const pm = getVenue(attendance, dateStr, "pm");
+    const dayData = attendance[dateStr];
+    const note = dayData?.notes || getCalendarNote(dateStr) || "";
+    setEditAm(am);
+    setEditPm(pm);
+    setEditNote(note);
+    setEditingDate(dateStr);
+  };
+
+  const closeEdit = () => {
+    setEditingDate(null);
+    setEditAm(null);
+    setEditPm(null);
+    setEditNote("");
+    setConfirmOverwrite(null);
+  };
+
+  // 實際儲存
+  const doSave = async () => {
+    const dateStr = editingDate;
+    const beforeAm = getVenue(attendance, dateStr, "am");
+    const beforePm = getVenue(attendance, dateStr, "pm");
+    const beforeNote = attendance[dateStr]?.notes || "";
+
+    setAttendance(prev => {
+      const next = { ...prev };
+      const day = { ...(next[dateStr] || {}) };
+      day.venue = { am: editAm, pm: editPm };
+      if (editNote.trim()) {
+        day.notes = editNote.trim();
+      } else {
+        delete day.notes;
+      }
+      next[dateStr] = day;
+      return next;
+    }, {
+      dateStr: dateStr,
+      logPayload: {
+        target: `calendar/${dateStr}`,
+        targetLabel: `編輯行事曆：${dateStr}`,
+        before: { am: beforeAm, pm: beforePm, notes: beforeNote },
+        after: { am: editAm, pm: editPm, notes: editNote },
+      },
+    });
+    closeEdit();
+  };
+
+  // 儲存（含確認）
+  const handleSave = () => {
+    if (hasAttendanceData(editingDate)) {
+      setConfirmOverwrite(true);
+      return;
+    }
+    doSave();
+  };
+
+  // 快速套用：刪除訓練日（兩場都 closed）
+  const setAsClosed = () => {
+    setEditAm("closed");
+    setEditPm("closed");
+  };
+  // 快速套用：龍門全天
+  const setAsLongmen = () => {
+    setEditAm("longmen");
+    setEditPm("longmen");
+  };
+  // 快速套用：永運全天
+  const setAsYongyun = () => {
+    setEditAm("yongyun");
+    setEditPm("yongyun");
+  };
+
+  // 月曆網格
+  const Y = viewY, M = viewM;
+  const firstDay = new Date(Y, M, 1).getDay();
+  const lastDate = new Date(Y, M + 1, 0).getDate();
+  const lead = (firstDay + 6) % 7; // 週一開始
+  const cells = [];
+  for (let i = 0; i < lead; i++) cells.push({ blank: true });
+  for (let d = 1; d <= lastDate; d++) cells.push({ d });
+  while (cells.length % 7 !== 0) cells.push({ blank: true });
+
+  const todayStr = (today.getFullYear() === Y && today.getMonth() === M) ? toDateStr(today) : null;
+
+  return (
+    <div className="space-y-4">
+      <header>
+        <h2 className="display-cn text-xl sm:text-2xl mb-1" style={{ color: "var(--ink)" }}>
+          📅 行事曆編輯
+        </h2>
+        <p className="text-xs sm:text-sm" style={{ color: "var(--mute)" }}>
+          每天的場地與備註可隨時編輯，覆蓋預設值
+        </p>
+      </header>
+
+      {/* 月份切換列 */}
+      <section className="rounded-2xl border-2 p-3 sm:p-4"
+               style={{ background: "var(--panel)", borderColor: "var(--ink)" }}>
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <button onClick={goPrev}
+                  className="btn-tactile flex items-center gap-1 px-3 py-2 rounded-lg border-2"
+                  style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+            <ChevronLeft size={16} strokeWidth={2.5} />
+            上個月
+          </button>
+          <div className="display-cn text-lg sm:text-xl font-bold text-center" style={{ color: "var(--ink)" }}>
+            {Y} 年 {MONTH_NAMES_CN[M]}
+          </div>
+          <button onClick={goNext}
+                  className="btn-tactile flex items-center gap-1 px-3 py-2 rounded-lg border-2"
+                  style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+            下個月
+            <ChevronRight size={16} strokeWidth={2.5} />
+          </button>
+        </div>
+        <button onClick={goToday}
+                className="btn-tactile w-full flex items-center justify-center gap-1 py-2 rounded-lg border"
+                style={{
+                  borderColor: "var(--accent)",
+                  background: "var(--accent-bg)",
+                  color: "var(--accent)",
+                }}>
+          <RotateCcw size={13} strokeWidth={2.5} />
+          回今天
+        </button>
+
+        {/* 提示橫條 */}
+        <div className="mt-3 px-3 py-2 rounded-lg flex items-start gap-2"
+             style={{ background: "var(--accent-bg)", color: "var(--accent-2)" }}>
+          <span className="text-base shrink-0" style={{ marginTop: 1 }}>💡</span>
+          <div className="text-[11px] sm:text-xs leading-relaxed">
+            點任一格可編輯該日場地與備註。已有點名的日期會顯示 🔒，需要確認才能改。
+          </div>
+        </div>
+
+        {/* 圖例 */}
+        <div className="mt-2 flex items-center gap-3 flex-wrap text-[11px]" style={{ color: "var(--mute)" }}>
+          <span className="flex items-center gap-1">
+            <span className="w-3 h-3 rounded-sm" style={{ background: "var(--panel)", border: "0.5px solid var(--line-strong)" }} />
+            龍門
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-3 h-3 rounded-sm" style={{ background: VENUES.yongyun.bg, border: `0.5px solid ${VENUES.yongyun.color}` }} />
+            永運
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-3 h-3 rounded-sm" style={{ background: VENUES.closed.bg, border: `0.5px solid ${VENUES.closed.color}` }} />
+            停練
+          </span>
+          <span className="flex items-center gap-1">🔒 已有點名</span>
+          <span className="flex items-center gap-1">⭐ 整日備註</span>
+        </div>
+      </section>
+
+      {/* 月曆網格 */}
+      <section className="rounded-2xl border-2 p-2 sm:p-3"
+               style={{ background: "var(--panel-2)", borderColor: "var(--line-strong)" }}>
+        {/* 星期標頭 */}
+        <div className="grid grid-cols-7 gap-1 mb-1.5 text-[10px] sm:text-xs"
+             style={{ color: "var(--mute)" }}>
+          {["一","二","三","四","五","六","日"].map((d, i) => (
+            <div key={d} className="text-center font-medium tk-l py-1"
+                 style={{ color: "var(--ink-2)" }}>
+              {d}
+            </div>
+          ))}
+        </div>
+
+        {/* 日期格子 */}
+        <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
+          {cells.map((c, i) => {
+            if (c.blank) return <div key={i} />;
+            const dateStr = `${Y}-${pad(M + 1)}-${pad(c.d)}`;
+            const dateInfo = getDateInfo(dateStr);
+            const isSun = dateInfo.isSun;
+            // 判斷此日是否「實際無訓練」（沒設場地 + 沒備註 + 沒點名 + Excel 沒設定）
+            const dayData = attendance[dateStr];
+            const hasManualVenue = !!dayData?.venue;
+            const hasCalendarEntry = !!VENUE_CALENDAR[dateStr];
+            const am = getVenue(attendance, dateStr, "am");
+            const pm = getVenue(attendance, dateStr, "pm");
+            const note = dayData?.notes || getCalendarNote(dateStr);
+            const hasData = hasAttendanceData(dateStr);
+            const isToday = dateStr === todayStr;
+            const isAllClosed = am === "closed" && pm === "closed";
+            const isAllYongyun = am === "yongyun" && pm === "yongyun";
+
+            // 「空白格」= 週日且沒任何資料
+            const isEmpty = isSun && !hasManualVenue && !hasCalendarEntry && !hasData && !note;
+
+            // 主背景色
+            let bg = "var(--panel)";
+            let bd = "var(--line)";
+            if (isEmpty) { bg = "transparent"; bd = "var(--line)"; }
+            else if (isAllClosed) { bg = VENUES.closed.bg; bd = VENUES.closed.color; }
+            else if (isAllYongyun) { bg = VENUES.yongyun.bg; bd = VENUES.yongyun.color; }
+            else if (am === "yongyun" || pm === "yongyun") { bg = VENUES.yongyun.bg; bd = VENUES.yongyun.color; }
+
+            return (
+              <button key={i}
+                      onClick={() => openEdit(dateStr)}
+                      className="btn-tactile relative rounded-lg p-1.5 sm:p-2 text-left flex flex-col"
+                      style={{
+                        background: bg,
+                        border: isToday ? `2px solid var(--accent)` : isEmpty ? `1px dashed var(--line-strong)` : `1px solid ${bd}`,
+                        minHeight: 70,
+                        cursor: "pointer",
+                        opacity: isAllClosed && !isEmpty ? 0.85 : 1,
+                      }}>
+                {/* 日期數字 */}
+                <div className="flex items-start justify-between">
+                  <span className="num text-sm sm:text-base font-bold"
+                        style={{
+                          color: isEmpty ? "var(--mute)"
+                            : isAllClosed ? VENUES.closed.color
+                            : "var(--ink)",
+                        }}>
+                    {c.d}
+                  </span>
+                  {hasData && (
+                    <span className="text-[9px]" title="已有點名資料">🔒</span>
+                  )}
+                </div>
+
+                {/* 空白格：顯示「+ 新增」按鈕 */}
+                {isEmpty ? (
+                  <div className="flex-1 flex flex-col items-center justify-center" style={{ color: "var(--mute)" }}>
+                    <div className="text-base font-bold leading-none">+</div>
+                    <div className="text-[8px] sm:text-[9px] leading-tight mt-1">新增訓練</div>
+                  </div>
+                ) : (
+                  <>
+                    {/* 場地內容 */}
+                    <div className="text-[9px] sm:text-[10px] leading-tight mt-1 space-y-0.5" style={{ color: VENUES[am].color }}>
+                      {am === "closed" && pm === "closed" ? (
+                        <div style={{ color: VENUES.closed.color, fontWeight: 600 }}>停練</div>
+                      ) : (
+                        <>
+                          <div style={{ color: VENUES[am].color }}>
+                            早:{VENUES[am].label}
+                          </div>
+                          <div style={{ color: VENUES[pm].color }}>
+                            午:{VENUES[pm].label}
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* 備註 */}
+                    {note && (
+                      <div className="text-[9px] mt-0.5 truncate font-bold"
+                           style={{ color: "var(--ink-2)" }}
+                           title={note}>
+                        ⭐{note}
+                      </div>
+                    )}
+                  </>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* 編輯對話框 */}
+      {editingDate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+             style={{ background: "rgba(20, 18, 16, 0.6)" }}
+             onClick={(e) => { if (e.target === e.currentTarget) closeEdit(); }}>
+          <div className="rounded-2xl border-2 p-4 sm:p-5 max-w-md w-full max-h-[90vh] overflow-y-auto"
+               style={{ background: "var(--panel)", borderColor: "var(--ink)" }}>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <div className="text-[10px] tk-l" style={{ color: "var(--mute)" }}>編輯行事曆</div>
+                <div className="display-cn text-lg sm:text-xl font-bold" style={{ color: "var(--ink)" }}>
+                  {editingDate.split("-").join(" / ")} {getDateInfo(editingDate).dayLabel}
+                </div>
+              </div>
+              <button onClick={closeEdit}
+                      className="btn-tactile w-8 h-8 rounded-md flex items-center justify-center"
+                      style={{ color: "var(--mute)" }}>
+                <X size={18} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            {/* 已有點名警告 */}
+            {hasAttendanceData(editingDate) && (
+              <div className="mb-3 px-3 py-2 rounded-lg border flex items-start gap-2"
+                   style={{ background: "var(--amber-bg)", borderColor: "var(--amber)" }}>
+                <AlertTriangle size={14} strokeWidth={2.5} style={{ color: "#5C4810", marginTop: 2 }} />
+                <div className="text-[11px]" style={{ color: "#5C4810" }}>
+                  此日已有點名資料。改場地不會清除點名紀錄，但會影響統計。
+                </div>
+              </div>
+            )}
+
+            {/* 週日新增訓練提示 */}
+            {getDateInfo(editingDate).isSun && !hasAttendanceData(editingDate) && (
+              <div className="mb-3 px-3 py-2 rounded-lg border flex items-start gap-2"
+                   style={{ background: VENUES.yongyun.bg, borderColor: VENUES.yongyun.color }}>
+                <span style={{ color: VENUES.yongyun.color, fontWeight: 700, marginTop: 1 }}>+</span>
+                <div className="text-[11px]" style={{ color: VENUES.yongyun.color }}>
+                  這是週日。預設沒有訓練，但你可以加練。例：選「整天永運」+ 備註「比賽前加練」
+                </div>
+              </div>
+            )}
+
+            {/* 快速套用 */}
+            <div className="mb-3">
+              <div className="text-[10px] tk-l mb-1.5" style={{ color: "var(--mute)" }}>快速套用</div>
+              <div className="grid grid-cols-3 gap-1.5">
+                <button onClick={setAsLongmen}
+                        className="btn-tactile py-1.5 rounded-md text-xs font-medium border"
+                        style={{
+                          background: "var(--panel-2)",
+                          borderColor: "var(--line-strong)",
+                          color: VENUES.longmen.color,
+                        }}>
+                  整天龍門
+                </button>
+                <button onClick={setAsYongyun}
+                        className="btn-tactile py-1.5 rounded-md text-xs font-medium border"
+                        style={{
+                          background: VENUES.yongyun.bg,
+                          borderColor: VENUES.yongyun.color,
+                          color: VENUES.yongyun.color,
+                        }}>
+                  整天永運
+                </button>
+                <button onClick={setAsClosed}
+                        className="btn-tactile py-1.5 rounded-md text-xs font-medium border"
+                        style={{
+                          background: VENUES.closed.bg,
+                          borderColor: VENUES.closed.color,
+                          color: VENUES.closed.color,
+                        }}>
+                  整天停練
+                </button>
+              </div>
+            </div>
+
+            {/* 早訓場地 */}
+            <div className="mb-3">
+              <div className="text-[10px] tk-l mb-1.5" style={{ color: "var(--mute)" }}>早訓場地</div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {["longmen", "yongyun", "closed"].map(v => (
+                  <button key={v} onClick={() => setEditAm(v)}
+                          className="btn-tactile py-2 rounded-md text-xs font-medium border-2"
+                          style={{
+                            background: editAm === v ? VENUES[v].color : VENUES[v].bg,
+                            borderColor: VENUES[v].color,
+                            color: editAm === v ? "#fff" : VENUES[v].color,
+                          }}>
+                    {VENUES[v].label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 午訓場地 */}
+            <div className="mb-3">
+              <div className="text-[10px] tk-l mb-1.5" style={{ color: "var(--mute)" }}>午訓場地</div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {["longmen", "yongyun", "closed"].map(v => (
+                  <button key={v} onClick={() => setEditPm(v)}
+                          className="btn-tactile py-2 rounded-md text-xs font-medium border-2"
+                          style={{
+                            background: editPm === v ? VENUES[v].color : VENUES[v].bg,
+                            borderColor: VENUES[v].color,
+                            color: editPm === v ? "#fff" : VENUES[v].color,
+                          }}>
+                    {VENUES[v].label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 整日備註 */}
+            <div className="mb-3">
+              <div className="text-[10px] tk-l mb-1.5" style={{ color: "var(--mute)" }}>整日備註（選填）</div>
+              <input type="text" value={editNote}
+                     onChange={e => setEditNote(e.target.value)}
+                     placeholder="例如：青年盃比賽 / 兒童節 / 月考..."
+                     className="w-full px-3 py-2 rounded-md text-sm"
+                     style={{
+                       border: "1px solid var(--line-strong)",
+                       background: "var(--panel-2)",
+                       color: "var(--ink)",
+                     }} />
+              <div className="text-[10px] mt-1" style={{ color: "var(--mute)" }}>
+                會顯示在月曆格子上方
+              </div>
+            </div>
+
+            {/* 操作按鈕 */}
+            {!confirmOverwrite ? (
+              <div className="flex gap-2">
+                <button onClick={closeEdit}
+                        className="btn-tactile flex-1 px-4 py-2 rounded-lg text-sm font-medium border-2"
+                        style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+                  取消
+                </button>
+                <button onClick={handleSave}
+                        className="btn-tactile flex-1 flex items-center justify-center gap-1 px-4 py-2 rounded-lg text-sm font-medium"
+                        style={{ background: "var(--green)", color: "#fff" }}>
+                  <Check size={14} strokeWidth={2.5} />
+                  儲存變更
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="rounded-lg p-3 border-2"
+                     style={{ background: "var(--red-bg)", borderColor: "var(--red)" }}>
+                  <div className="text-sm font-bold mb-1" style={{ color: "var(--red)" }}>
+                    ⚠️ 確認覆蓋？
+                  </div>
+                  <div className="text-xs" style={{ color: "var(--ink-2)" }}>
+                    此日已有點名資料。改場地會影響當月統計與費用計算，但點名紀錄不會被刪除。
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setConfirmOverwrite(null)}
+                          className="btn-tactile flex-1 px-4 py-2 rounded-lg text-sm font-medium border-2"
+                          style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+                    取消
+                  </button>
+                  <button onClick={doSave}
+                          className="btn-tactile flex-1 flex items-center justify-center gap-1 px-4 py-2 rounded-lg text-sm font-medium"
+                          style={{ background: "var(--red)", color: "#fff" }}>
+                    <Check size={14} strokeWidth={2.5} />
+                    確認覆蓋
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
