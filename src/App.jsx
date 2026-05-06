@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, createContext, useContext } from "react";
 import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
 import { doc, onSnapshot, setDoc, collection, addDoc, query, orderBy, limit, getDocs, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db, googleProvider } from "./firebase";
+import * as XLSX from "xlsx";
 import {
   Check, X, Download, RotateCcw, Zap, AlertTriangle, Sparkles,
   Award, ChevronLeft, ChevronRight, ListChecks, CalendarDays,
@@ -419,51 +420,240 @@ function AttendanceApp({ user }) {
     }
   };
 
+  // 匯出 xlsx 三分頁：個人匯總 / 場次彙整 / 完整紀錄
   const exportAll = () => {
-    const csvSafe = (s) => `"${(s || "").replace(/"/g, '""')}"`;
-    const lines = [
-      ["日期", "星期", "時段", "場地", "序號", "班級", "座號", "姓名", "年級", "表定", "實際", "遲到", "備註", "永運費"].join(",")
+    const wb = XLSX.utils.book_new();
+
+    // ========== Sheet 1: 個人匯總 ==========
+    const personData = roster.map(p => {
+      let scheduled = 0, present = 0, absent = 0, pending = 0, late = 0, bonus = 0;
+      let yyAm = 0, yyPm = 0;
+      TRAINING_DAYS.forEach(day => {
+        const dayData = attendance[day.dateStr] || {};
+        const amVenue = getVenue(attendance, day.dateStr, "am");
+        const pmVenue = getVenue(attendance, day.dateStr, "pm");
+        // AM
+        const amSch = p.sch[day.info.amIdx] === 1;
+        const amAc = dayData.am?.[p.seq];
+        const amIsLate = !!dayData.am_late?.[p.seq];
+        if (amSch) scheduled++;
+        if (amSch && amAc === "present") {
+          present++;
+          if (amIsLate) late++;
+          if (amVenue === "yongyun") yyAm++;
+        }
+        if (amSch && amAc === "absent") absent++;
+        if (amSch && !amAc) pending++;
+        if (!amSch && amAc === "present") {
+          bonus++;
+          if (amIsLate) late++;
+          if (amVenue === "yongyun") yyAm++;
+        }
+        // PM
+        const pmSch = p.sch[day.info.pmIdx] === 1;
+        const pmAc = dayData.pm?.[p.seq];
+        const pmIsLate = !!dayData.pm_late?.[p.seq];
+        if (pmSch) scheduled++;
+        if (pmSch && pmAc === "present") {
+          present++;
+          if (pmIsLate) late++;
+          if (pmVenue === "yongyun") yyPm++;
+        }
+        if (pmSch && pmAc === "absent") absent++;
+        if (pmSch && !pmAc) pending++;
+        if (!pmSch && pmAc === "present") {
+          bonus++;
+          if (pmIsLate) late++;
+          if (pmVenue === "yongyun") yyPm++;
+        }
+      });
+      const rate = scheduled === 0 ? 0 : Math.round(present / scheduled * 100);
+      const yyTotal = yyAm + yyPm;
+      const yyFee = yyTotal * VENUE_FEE;
+      return {
+        "序號": p.seq,
+        "班級": p.cls,
+        "座號": p.num,
+        "姓名": p.name,
+        "年級": GRADE_NAMES[p.grade],
+        "表定": scheduled,
+        "實到": present,
+        "缺席": absent,
+        "待點名": pending,
+        "補訓": bonus,
+        "遲到": late,
+        "出席率": `${rate}%`,
+        "永運早訓": yyAm,
+        "永運午訓": yyPm,
+        "永運總場": yyTotal,
+        "應收費用": yyFee > 0 ? yyFee : "",
+      };
+    });
+    const totalFee = personData.reduce((acc, r) => acc + (r["應收費用"] || 0), 0);
+    const totalScheduled = personData.reduce((acc, r) => acc + r["表定"], 0);
+    const totalPresent = personData.reduce((acc, r) => acc + r["實到"], 0);
+    personData.push({
+      "序號": "",
+      "班級": "",
+      "座號": "",
+      "姓名": "─ 全隊合計 ─",
+      "年級": "",
+      "表定": totalScheduled,
+      "實到": totalPresent,
+      "缺席": personData.reduce((a, r) => a + r["缺席"], 0),
+      "待點名": personData.reduce((a, r) => a + r["待點名"], 0),
+      "補訓": personData.reduce((a, r) => a + r["補訓"], 0),
+      "遲到": personData.reduce((a, r) => a + r["遲到"], 0),
+      "出席率": totalScheduled === 0 ? "0%" : `${Math.round(totalPresent / totalScheduled * 100)}%`,
+      "永運早訓": personData.reduce((a, r) => a + r["永運早訓"], 0),
+      "永運午訓": personData.reduce((a, r) => a + r["永運午訓"], 0),
+      "永運總場": personData.reduce((a, r) => a + r["永運總場"], 0),
+      "應收費用": totalFee,
+    });
+    const ws1 = XLSX.utils.json_to_sheet(personData);
+    // 欄寬
+    ws1["!cols"] = [
+      { wch: 6 }, { wch: 8 }, { wch: 6 }, { wch: 10 }, { wch: 8 },
+      { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 8 }, { wch: 6 }, { wch: 6 },
+      { wch: 8 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 10 },
     ];
-    TRAINING_DAYS.forEach((day) => {
+    XLSX.utils.book_append_sheet(wb, ws1, "個人匯總");
+
+    // ========== Sheet 2: 場次彙整 ==========
+    const sessionData = [];
+    TRAINING_DAYS.forEach(day => {
       const dayData = attendance[day.dateStr] || {};
-      ["am", "pm"].forEach((per) => {
+      ["am", "pm"].forEach(per => {
+        const idx = per === "am" ? day.info.amIdx : day.info.pmIdx;
+        const slot = dayData[per] || {};
+        const lateSlot = dayData[per === "am" ? "am_late" : "pm_late"] || {};
+        const venue = getVenue(attendance, day.dateStr, per);
+        let sch = 0, on = 0, no = 0, pn = 0, bn = 0, lt = 0, yyOn = 0;
+        roster.forEach(p => {
+          const isSch = p.sch[idx] === 1;
+          const ac = slot[p.seq];
+          const isLate = !!lateSlot[p.seq];
+          if (isSch) sch++;
+          if (isSch && ac === "present") {
+            on++;
+            if (isLate) lt++;
+            if (venue === "yongyun") yyOn++;
+          }
+          if (isSch && ac === "absent") no++;
+          if (isSch && !ac) pn++;
+          if (!isSch && ac === "present") {
+            bn++;
+            if (isLate) lt++;
+            if (venue === "yongyun") yyOn++;
+          }
+        });
+        const fee = venue === "yongyun" ? yyOn * VENUE_FEE : 0;
+        sessionData.push({
+          "日期": day.dateStr,
+          "星期": day.info.dayLabel,
+          "時段": per === "am" ? "早訓" : "午訓",
+          "場地": VENUES[venue].label,
+          "表定": sch,
+          "實到": on,
+          "缺席": no,
+          "待點名": pn,
+          "補訓": bn,
+          "遲到": lt,
+          "出席率": sch === 0 ? "—" : `${Math.round(on / sch * 100)}%`,
+          "永運費": fee > 0 ? fee : "",
+          "整日備註": dayData.notes || "",
+        });
+      });
+    });
+    const sessionTotalFee = sessionData.reduce((a, r) => a + (r["永運費"] || 0), 0);
+    sessionData.push({
+      "日期": "",
+      "星期": "",
+      "時段": "",
+      "場地": "─ 合計 ─",
+      "表定": sessionData.reduce((a, r) => a + r["表定"], 0),
+      "實到": sessionData.reduce((a, r) => a + r["實到"], 0),
+      "缺席": sessionData.reduce((a, r) => a + r["缺席"], 0),
+      "待點名": sessionData.reduce((a, r) => a + r["待點名"], 0),
+      "補訓": sessionData.reduce((a, r) => a + r["補訓"], 0),
+      "遲到": sessionData.reduce((a, r) => a + r["遲到"], 0),
+      "出席率": "",
+      "永運費": sessionTotalFee,
+      "整日備註": "",
+    });
+    const ws2 = XLSX.utils.json_to_sheet(sessionData);
+    ws2["!cols"] = [
+      { wch: 12 }, { wch: 6 }, { wch: 6 }, { wch: 8 },
+      { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 8 }, { wch: 6 }, { wch: 6 },
+      { wch: 8 }, { wch: 8 }, { wch: 30 },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws2, "場次彙整");
+
+    // ========== Sheet 3: 完整紀錄 ==========
+    const fullData = [];
+    TRAINING_DAYS.forEach(day => {
+      const dayData = attendance[day.dateStr] || {};
+      ["am", "pm"].forEach(per => {
         const idx = per === "am" ? day.info.amIdx : day.info.pmIdx;
         const slot = dayData[per] || {};
         const lateSlot = dayData[per === "am" ? "am_late" : "pm_late"] || {};
         const noteSlot = dayData[per === "am" ? "am_notes" : "pm_notes"] || {};
         const venue = getVenue(attendance, day.dateStr, per);
-        const venueLabel = VENUES[venue].label;
         const isYy = venue === "yongyun";
-        roster.forEach((p) => {
+        roster.forEach(p => {
           const sch = p.sch[idx] === 1;
           const ac = slot[p.seq];
           const isLate = !!lateSlot[p.seq];
           const note = noteSlot[p.seq] || "";
-          const fee = isYy && ac === "present" ? `$${VENUE_FEE}` : "";
-          lines.push([
-            day.dateStr, day.info.dayLabel,
-            per === "am" ? "早訓" : "午訓",
-            venueLabel,
-            p.seq, p.cls, p.num, p.name,
-            GRADE_NAMES[p.grade],
-            sch ? "出席" : "不出席",
-            ac === "present" ? "出席" : ac === "absent" ? "未到" : "未點名",
-            isLate ? "是" : "",
-            csvSafe(note),
-            fee,
-          ].join(","));
+          const fee = isYy && ac === "present" ? VENUE_FEE : "";
+          fullData.push({
+            "日期": day.dateStr,
+            "星期": day.info.dayLabel,
+            "時段": per === "am" ? "早訓" : "午訓",
+            "場地": VENUES[venue].label,
+            "序號": p.seq,
+            "班級": p.cls,
+            "座號": p.num,
+            "姓名": p.name,
+            "年級": GRADE_NAMES[p.grade],
+            "表定": sch ? "出席" : "不出席",
+            "實際": ac === "present" ? "出席" : ac === "absent" ? "未到" : "未點名",
+            "遲到": isLate ? "是" : "",
+            "備註": note,
+            "永運費": fee,
+          });
         });
       });
-      // 整日備註單獨一行
+      // 整日備註
       if (dayData.notes) {
-        lines.push([day.dateStr, day.info.dayLabel, "整日備註", "", "", "", "", "", "", "", "", "", csvSafe(dayData.notes), ""].join(","));
+        fullData.push({
+          "日期": day.dateStr,
+          "星期": day.info.dayLabel,
+          "時段": "整日備註",
+          "場地": "",
+          "序號": "",
+          "班級": "",
+          "座號": "",
+          "姓名": "",
+          "年級": "",
+          "表定": "",
+          "實際": "",
+          "遲到": "",
+          "備註": dayData.notes,
+          "永運費": "",
+        });
       }
     });
-    const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `點名_${Y}年${M + 1}月_全部紀錄.csv`; a.click();
-    URL.revokeObjectURL(url);
+    const ws3 = XLSX.utils.json_to_sheet(fullData);
+    ws3["!cols"] = [
+      { wch: 12 }, { wch: 6 }, { wch: 8 }, { wch: 6 },
+      { wch: 6 }, { wch: 8 }, { wch: 6 }, { wch: 10 }, { wch: 8 },
+      { wch: 8 }, { wch: 8 }, { wch: 6 }, { wch: 24 }, { wch: 8 },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws3, "完整紀錄");
+
+    // 寫檔
+    XLSX.writeFile(wb, `龍門泳隊_${Y}年${M + 1}月報表.xlsx`);
   };
 
   // Screenshot mode: render clean view only
@@ -550,9 +740,10 @@ function AttendanceApp({ user }) {
               </button>
               <button onClick={exportAll}
                       className="btn-tactile w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-lg border-2 font-medium"
-                      style={{ borderColor: "var(--accent-2)", background: "var(--accent-2)", color: "var(--bg)" }}>
+                      style={{ borderColor: "var(--accent-2)", background: "var(--accent-2)", color: "var(--bg)" }}
+                      title="匯出 Excel 三分頁：個人匯總 / 場次彙整 / 完整紀錄">
                 <Download size={16} strokeWidth={2.5} />
-                匯出全月 CSV
+                匯出全月報表
               </button>
             </div>
           </div>
@@ -1122,18 +1313,16 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
             {fullLabel}
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-2 mb-3">
           {[
             { k: "am", l: "早訓", Ic: Sun },
             { k: "pm", l: "午訓", Ic: Moon },
           ].map(p => {
             const active = period === p.k;
             const Ic = p.Ic;
-            const pVenue = getVenue(attendance, selectedDate, p.k);
-            const pVenueObj = VENUES[pVenue];
             return (
               <button key={p.k} onClick={() => setPeriod(p.k)}
-                      className="btn-tactile flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-medium relative"
+                      className="btn-tactile flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-medium"
                       style={{
                         borderColor: active ? "var(--red)" : "var(--line)",
                         background: active ? "var(--red)" : "transparent",
@@ -1141,67 +1330,36 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
                       }}>
                 <Ic size={16} strokeWidth={2.5} />
                 {p.l}
-                <span className="text-[9px] px-1.5 py-0.5 rounded font-bold ml-1"
-                      style={{
-                        background: active ? "rgba(255,255,255,0.25)" : pVenueObj.bg,
-                        color: active ? "#fff" : pVenueObj.color,
-                      }}>
-                  📍{pVenueObj.short}
-                </span>
               </button>
             );
           })}
         </div>
-      </section>
 
-      {/* 場地切換 */}
-      <section className="rounded-2xl p-4 sm:p-5 border-2"
-               style={{
-                 background: VENUES[currentVenue].bg,
-                 borderColor: VENUES[currentVenue].color,
-               }}>
-        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <div className="text-[10px] sm:text-xs tk-x" style={{ color: VENUES[currentVenue].color, opacity: 0.7 }}>
-            VENUE · {periodLabel}場地
-          </div>
-          {currentVenue === "yongyun" && (
-            <span className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full font-bold"
-                  style={{ background: VENUES.yongyun.color, color: "#fff" }}>
-              💰 每人 ${VENUE_FEE}
-            </span>
-          )}
-        </div>
-        <div className="grid grid-cols-2 gap-2">
+        {/* 場地切換（極簡單行） */}
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg flex-wrap"
+             style={{ background: "var(--panel-2)" }}>
+          <span className="text-[11px]" style={{ color: "var(--mute)" }}>場地</span>
           {Object.values(VENUES).map(v => {
             const active = currentVenue === v.id;
             return (
               <button key={v.id} onClick={() => setVenue(v.id)} disabled={locked}
-                      className="btn-tactile flex items-center justify-center gap-1.5 py-2.5 rounded-xl border-2 font-medium"
+                      className="btn-tactile px-3 py-1 rounded-md text-[13px] font-medium"
                       style={{
-                        borderColor: active ? v.color : "var(--line)",
-                        background: active ? v.color : "var(--panel)",
+                        background: active ? v.color : "transparent",
                         color: active ? "#fff" : "var(--ink-2)",
+                        border: active ? `1px solid ${v.color}` : "0.5px solid var(--line-strong)",
                         opacity: locked ? 0.6 : 1,
                       }}>
-                <span style={{ fontSize: 14 }}>📍</span>
-                <span>{v.label}</span>
-                {v.fee > 0 && (
-                  <span className="text-[10px] px-1 rounded ml-1"
-                        style={{
-                          background: active ? "rgba(255,255,255,0.25)" : "rgba(168, 85, 24, 0.15)",
-                          color: active ? "#fff" : v.color,
-                        }}>
-                    ${v.fee}
-                  </span>
-                )}
+                {v.label}
               </button>
             );
           })}
-        </div>
-        <div className="text-[10px] mt-2 text-center" style={{ color: VENUES[currentVenue].color, opacity: 0.7 }}>
-          {currentVenue === "yongyun"
-            ? `本場為永運場次，出席每位隊員加收 $${VENUE_FEE}`
-            : "本場為龍門泳池，無額外費用"}
+          {currentVenue === "yongyun" && (
+            <span className="ml-auto text-[11px] font-bold"
+                  style={{ color: VENUES.yongyun.color }}>
+              永運 +${VENUE_FEE}/人/次
+            </span>
+          )}
         </div>
       </section>
 
@@ -2171,29 +2329,60 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
     [personStats]);
 
   const exportFee = () => {
-    const csvSafe = (s) => `"${(s || "").replace(/"/g, '""')}"`;
-    const lines = [
-      [`${Y} 年 ${M + 1} 月 永運費用統計`].join(","),
-      [`本月永運場次：早訓 ${yyStats.yyAmSessions} 場 + 午訓 ${yyStats.yyPmSessions} 場 = 共 ${yyStats.yyAmSessions + yyStats.yyPmSessions} 場`].join(","),
-      [`每場次費用：$${VENUE_FEE} / 人`].join(","),
-      "",
-      ["序號", "班級", "座號", "姓名", "年級", "早訓出席次數", "午訓出席次數", "永運總出席", "應收費用"].join(","),
-    ];
-    paidList.forEach(s => {
-      lines.push([
-        s.seq, s.cls, s.num, s.name, GRADE_NAMES[s.grade],
-        s.yyAm, s.yyPm, s.yyTotal, `$${s.yyFee}`,
-      ].join(","));
+    const wb = XLSX.utils.book_new();
+    const data = [];
+    // 標題列
+    data.push({ "項目": `${Y} 年 ${M + 1} 月 永運費用統計` });
+    data.push({ "項目": `本月永運場次：早訓 ${yyStats.yyAmSessions} 場 + 午訓 ${yyStats.yyPmSessions} 場 = 共 ${yyStats.yyAmSessions + yyStats.yyPmSessions} 場` });
+    data.push({ "項目": `每場次費用：$${VENUE_FEE} / 人 / 次` });
+    data.push({ "項目": "" });
+
+    // 表格
+    const list = paidList.map(s => ({
+      "序號": s.seq,
+      "班級": s.cls,
+      "座號": s.num,
+      "姓名": s.name,
+      "年級": GRADE_NAMES[s.grade],
+      "早訓出席": s.yyAm,
+      "午訓出席": s.yyPm,
+      "永運總場": s.yyTotal,
+      "應收費用": s.yyFee,
+    }));
+    list.push({
+      "序號": "",
+      "班級": "",
+      "座號": "",
+      "姓名": "─ 合計 ─",
+      "年級": "",
+      "早訓出席": list.reduce((a, r) => a + r["早訓出席"], 0),
+      "午訓出席": list.reduce((a, r) => a + r["午訓出席"], 0),
+      "永運總場": list.reduce((a, r) => a + r["永運總場"], 0),
+      "應收費用": list.reduce((a, r) => a + r["應收費用"], 0),
     });
-    lines.push("");
-    lines.push([`應收人數：${yyStats.paidPeople} 人`].join(","));
-    lines.push([`總人次：${yyStats.totalAttendees} 人次`].join(","));
-    lines.push([`總費用：$${yyStats.totalFee}`].join(","));
-    const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `永運費用_${Y}年${M + 1}月.csv`; a.click();
-    URL.revokeObjectURL(url);
+
+    const ws = XLSX.utils.json_to_sheet(list, { origin: "A6" });
+    // 在最上方加標題
+    XLSX.utils.sheet_add_aoa(ws, [
+      [`${Y} 年 ${M + 1} 月 永運費用統計`],
+      [`本月永運場次：早訓 ${yyStats.yyAmSessions} 場 + 午訓 ${yyStats.yyPmSessions} 場 = 共 ${yyStats.yyAmSessions + yyStats.yyPmSessions} 場`],
+      [`每場次費用：$${VENUE_FEE} / 人 / 次`],
+      [`應收人數：${yyStats.paidPeople} 人 · 總人次：${yyStats.totalAttendees} · 總費用：$${yyStats.totalFee}`],
+      [],
+    ], { origin: "A1" });
+
+    ws["!cols"] = [
+      { wch: 6 }, { wch: 8 }, { wch: 6 }, { wch: 12 }, { wch: 8 },
+      { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 12 },
+    ];
+    ws["!merges"] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: 8 } },
+      { s: { r: 3, c: 0 }, e: { r: 3, c: 8 } },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, "永運費用");
+    XLSX.writeFile(wb, `永運費用_${Y}年${M + 1}月.xlsx`);
   };
 
   if (yyStats.yyAmSessions === 0 && yyStats.yyPmSessions === 0) {
@@ -2238,7 +2427,7 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
                   className="btn-tactile flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium"
                   style={{ background: VENUES.yongyun.color, color: "#fff" }}>
             <Download size={12} strokeWidth={2.5} />
-            匯出 CSV
+            匯出 Excel
           </button>
         </div>
       </div>
