@@ -1278,6 +1278,291 @@ function TabBar({ tab, setTab, isOwner }) {
 }
 
 // ============ MINI CALENDAR ============
+// ============ DATE PICKER (三層：年/月/日) ============
+function DatePicker({ selectedDate, onPick, attendance }) {
+  const { Y: selY, M: selM } = monthFromDate(selectedDate);
+  // viewY/viewM = 月曆當前顯示的月份（可獨立於 selectedDate）
+  const [viewY, setViewY] = useState(selY);
+  const [viewM, setViewM] = useState(selM);
+  // mode: "calendar" | "year" | "month"
+  const [mode, setMode] = useState("calendar");
+
+  // 當 selectedDate 改變時同步 view（除非使用者正在切月份）
+  const lastSelRef = useRef(selectedDate);
+  useEffect(() => {
+    if (selectedDate !== lastSelRef.current) {
+      const { Y, M } = monthFromDate(selectedDate);
+      setViewY(Y);
+      setViewM(M);
+      lastSelRef.current = selectedDate;
+    }
+  }, [selectedDate]);
+
+  const goPrevMonth = () => {
+    const { Y: nY, M: nM } = shiftMonth(viewY, viewM, -1);
+    setViewY(nY); setViewM(nM);
+  };
+  const goNextMonth = () => {
+    const { Y: nY, M: nM } = shiftMonth(viewY, viewM, 1);
+    setViewY(nY); setViewM(nM);
+  };
+  const handlePick = (ds) => {
+    lastSelRef.current = ds;
+    onPick(ds);
+  };
+
+  // ===== 月份檢視 =====
+  if (mode === "month") {
+    return (
+      <div>
+        {/* 年份切換 */}
+        <div className="flex items-center justify-between mb-3 px-2">
+          <button onClick={() => setViewY(y => y - 1)}
+                  className="btn-tactile w-9 h-9 rounded-md border flex items-center justify-center"
+                  style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+            <ChevronLeft size={16} strokeWidth={2.5} />
+          </button>
+          <button onClick={() => setMode("year")}
+                  className="btn-tactile px-4 py-1.5 rounded-md font-bold text-lg"
+                  style={{ background: "var(--panel-2)", color: "var(--ink)" }}>
+            {viewY} 年 ▾
+          </button>
+          <button onClick={() => setViewY(y => y + 1)}
+                  className="btn-tactile w-9 h-9 rounded-md border flex items-center justify-center"
+                  style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+            <ChevronRight size={16} strokeWidth={2.5} />
+          </button>
+        </div>
+
+        {/* 12 個月格子 */}
+        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+          {Array.from({ length: 12 }, (_, m) => {
+            const isCurrent = viewY === selY && m === selM;
+            const isToday = (() => {
+              const t = new Date();
+              return t.getFullYear() === viewY && t.getMonth() === m;
+            })();
+            return (
+              <button key={m}
+                      onClick={() => { setViewM(m); setMode("calendar"); }}
+                      className="btn-tactile py-3 rounded-lg border-2 font-medium"
+                      style={{
+                        background: isCurrent ? "var(--ink)" : "var(--panel-2)",
+                        color: isCurrent ? "var(--bg)" : "var(--ink)",
+                        borderColor: isToday && !isCurrent ? "var(--accent)" : "transparent",
+                      }}>
+                {m + 1} 月
+              </button>
+            );
+          })}
+        </div>
+
+        <button onClick={() => setMode("calendar")}
+                className="btn-tactile w-full mt-3 py-2 rounded-md text-xs"
+                style={{ color: "var(--mute)" }}>
+          ← 回月曆
+        </button>
+      </div>
+    );
+  }
+
+  // ===== 年份檢視 =====
+  if (mode === "year") {
+    const startY = Math.floor(viewY / 12) * 12;
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-3 px-2">
+          <button onClick={() => setViewY(y => y - 12)}
+                  className="btn-tactile w-9 h-9 rounded-md border flex items-center justify-center"
+                  style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+            <ChevronLeft size={16} strokeWidth={2.5} />
+          </button>
+          <span className="font-bold text-lg" style={{ color: "var(--ink)" }}>
+            {startY} - {startY + 11}
+          </span>
+          <button onClick={() => setViewY(y => y + 12)}
+                  className="btn-tactile w-9 h-9 rounded-md border flex items-center justify-center"
+                  style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+            <ChevronRight size={16} strokeWidth={2.5} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+          {Array.from({ length: 12 }, (_, i) => {
+            const y = startY + i;
+            const isCurrent = y === selY;
+            const isThisYear = y === new Date().getFullYear();
+            return (
+              <button key={y}
+                      onClick={() => { setViewY(y); setMode("month"); }}
+                      className="btn-tactile py-3 rounded-lg border-2 font-medium"
+                      style={{
+                        background: isCurrent ? "var(--ink)" : "var(--panel-2)",
+                        color: isCurrent ? "var(--bg)" : "var(--ink)",
+                        borderColor: isThisYear && !isCurrent ? "var(--accent)" : "transparent",
+                      }}>
+                {y}
+              </button>
+            );
+          })}
+        </div>
+
+        <button onClick={() => setMode("month")}
+                className="btn-tactile w-full mt-3 py-2 rounded-md text-xs"
+                style={{ color: "var(--mute)" }}>
+          ← 回月份選擇
+        </button>
+      </div>
+    );
+  }
+
+  // ===== 月曆檢視（預設） =====
+  const Y = viewY, M = viewM;
+  const firstDay = new Date(Y, M, 1).getDay();
+  const lastDate = new Date(Y, M + 1, 0).getDate();
+  const cells = [];
+  const lead = (firstDay + 6) % 7;
+  for (let i = 0; i < lead; i++) cells.push({ blank: true });
+  for (let d = 1; d <= lastDate; d++) cells.push({ d });
+  while (cells.length % 7 !== 0) cells.push({ blank: true });
+
+  const dayHasData = (d) => {
+    const ds = `${Y}-${pad(M + 1)}-${pad(d)}`;
+    const a = attendance[ds];
+    if (!a) return false;
+    return Object.keys(a.am || {}).length > 0 || Object.keys(a.pm || {}).length > 0;
+  };
+  const today = new Date();
+  const todayStr = (today.getFullYear() === Y && today.getMonth() === M) ? toDateStr(today) : null;
+
+  return (
+    <div>
+      {/* 月份標頭：點可進「月份選擇」 */}
+      <div className="flex items-center justify-between mb-2">
+        <button onClick={goPrevMonth}
+                className="btn-tactile w-8 h-8 rounded-md border flex items-center justify-center"
+                style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}
+                title="上個月">
+          <ChevronLeft size={14} strokeWidth={2.5} />
+        </button>
+        <button onClick={() => setMode("month")}
+                className="btn-tactile px-3 py-1.5 rounded-md hover:opacity-80"
+                style={{ background: "var(--panel-2)", color: "var(--ink)" }}
+                title="點此選月份／年份">
+          <span className="display-cn text-base font-bold">
+            {Y} 年 {MONTH_NAMES_CN[M]} ▾
+          </span>
+        </button>
+        <button onClick={goNextMonth}
+                className="btn-tactile w-8 h-8 rounded-md border flex items-center justify-center"
+                style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}
+                title="下個月">
+          <ChevronRight size={14} strokeWidth={2.5} />
+        </button>
+      </div>
+
+      {/* 星期標頭 */}
+      <div className="grid grid-cols-7 gap-1 mb-1.5 text-[10px] sm:text-xs"
+           style={{ color: "var(--mute)" }}>
+        {["一","二","三","四","五","六","日"].map((d, i) => (
+          <div key={d} className="text-center font-medium tk-l py-1"
+               style={{ color: i === 6 ? "var(--mute)" : "var(--ink-2)" }}>
+            {d}
+          </div>
+        ))}
+      </div>
+
+      {/* 日期格子 */}
+      <div className="grid grid-cols-7 gap-1">
+        {cells.map((c, i) => {
+          if (c.blank) return <div key={i} />;
+          const ds = `${Y}-${pad(M + 1)}-${pad(c.d)}`;
+          const info = getDateInfo(ds);
+          const isOff = info.off;
+          const isSelected = ds === selectedDate;
+          const isToday = ds === todayStr;
+          const hasData = dayHasData(c.d);
+          const amV = !isOff ? getVenue(attendance, ds, "am") : null;
+          const pmV = !isOff ? getVenue(attendance, ds, "pm") : null;
+          const isYongyun = amV === "yongyun" || pmV === "yongyun";
+          const isAllClosed = !isOff && amV === "closed" && pmV === "closed";
+          return (
+            <button key={i}
+                    onClick={() => !isOff && handlePick(ds)}
+                    disabled={isOff}
+                    className="btn-tactile relative aspect-square rounded-lg flex flex-col items-center justify-center text-sm sm:text-base"
+                    style={{
+                      background: isSelected ? "var(--ink)"
+                        : isOff ? "transparent"
+                        : isAllClosed ? VENUES.closed.bg
+                        : isYongyun ? VENUES.yongyun.bg
+                        : "var(--panel-2)",
+                      color: isSelected ? "var(--bg)"
+                        : isOff ? "var(--mute)"
+                        : isAllClosed ? VENUES.closed.color
+                        : isYongyun ? VENUES.yongyun.color
+                        : "var(--ink)",
+                      border: isToday && !isSelected ? "2px solid var(--accent)" : "2px solid transparent",
+                      cursor: isOff ? "not-allowed" : "pointer",
+                      fontWeight: isSelected ? 700 : 400,
+                      opacity: isAllClosed && !isSelected ? 0.6 : 1,
+                    }}>
+              <span className="num">{c.d}</span>
+              {isYongyun && !isAllClosed && !isSelected && (
+                <span className="absolute top-0.5 right-0.5 text-[8px] font-bold leading-none"
+                      style={{ color: VENUES.yongyun.color }}>
+                  永
+                </span>
+              )}
+              {isAllClosed && !isSelected && (
+                <span className="absolute top-0.5 right-0.5 text-[8px] font-bold leading-none"
+                      style={{ color: VENUES.closed.color }}>
+                  停
+                </span>
+              )}
+              {hasData && !isSelected && (
+                <span className="absolute bottom-1 w-1 h-1 rounded-full"
+                      style={{ background: isAllClosed ? VENUES.closed.color : isYongyun ? VENUES.yongyun.color : "var(--green-2)" }} />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 圖例 */}
+      <div className="mt-2 flex items-center gap-3 text-[10px] flex-wrap" style={{ color: "var(--mute)" }}>
+        <span className="flex items-center gap-1">
+          <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "var(--ink)" }} />
+          已選
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2.5 h-2.5 rounded-sm border-2" style={{ borderColor: "var(--accent)" }} />
+          今日
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-1 h-1 rounded-full" style={{ background: "var(--green-2)" }} />
+          有點名
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2.5 h-2.5 rounded-sm flex items-center justify-center text-[7px] font-bold"
+                style={{ background: VENUES.yongyun.bg, color: VENUES.yongyun.color }}>
+            永
+          </span>
+          永運
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2.5 h-2.5 rounded-sm flex items-center justify-center text-[7px] font-bold"
+                style={{ background: VENUES.closed.bg, color: VENUES.closed.color }}>
+            停
+          </span>
+          停練
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ============ MINI CALENDAR (舊版，保留給其他可能還在用的地方) ============
 function MiniCalendar({ selectedDate, onPick, attendance }) {
   // viewY/viewM 是月曆當前顯示的月份
   const [viewY, setViewY] = useState(() => monthFromDate(selectedDate).Y);
@@ -1767,15 +2052,19 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
           <div className="text-[10px] sm:text-xs tk-x" style={{ color: "var(--mute)" }}>
             DATE · 日期
           </div>
-          <button onClick={() => setShowCalendar(s => !s)}
+          <button onClick={() => {
+                    const today = toDateStr(new Date());
+                    setSelectedDate(today);
+                    setShowCalendar(false);
+                  }}
                   className="btn-tactile flex items-center gap-1 text-[10px] sm:text-xs px-2.5 py-1 rounded-md border"
                   style={{
-                    borderColor: showCalendar ? "var(--ink)" : "var(--line-strong)",
-                    background: showCalendar ? "var(--ink)" : "transparent",
-                    color: showCalendar ? "var(--bg)" : "var(--ink-2)",
-                  }}>
-            <CalendarDays size={12} strokeWidth={2.5} />
-            {showCalendar ? "收合月曆" : "選日期"}
+                    borderColor: "var(--accent)",
+                    background: "var(--accent-bg)",
+                    color: "var(--accent)",
+                  }}
+                  title="跳到今天">
+            ⭐ 今天
           </button>
         </div>
         <div className="flex items-center gap-2">
@@ -1785,15 +2074,23 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
                   title="上一個訓練日">
             <ChevronLeft size={18} strokeWidth={2.5} />
           </button>
-          <div className="flex-1 text-center px-2 py-2 rounded-lg"
-               style={{ background: "var(--panel-2)" }}>
-            <div className="display-cn text-xl sm:text-3xl leading-tight" style={{ color: "var(--ink)" }}>
+          <button onClick={() => setShowCalendar(s => !s)}
+                  className="btn-tactile flex-1 text-center px-2 py-2 rounded-lg border-2"
+                  style={{
+                    background: showCalendar ? "var(--ink)" : "var(--panel-2)",
+                    borderColor: showCalendar ? "var(--ink)" : "var(--line)",
+                  }}
+                  title="點此切換月份/年份">
+            <div className="display-cn text-xl sm:text-3xl leading-tight"
+                 style={{ color: showCalendar ? "var(--bg)" : "var(--ink)" }}>
               {selectedDate.split("-").join(" / ")}
             </div>
-            <div className="num text-xs sm:text-sm" style={{ color: "var(--mute)" }}>
+            <div className="num text-xs sm:text-sm flex items-center justify-center gap-1"
+                 style={{ color: showCalendar ? "rgba(255,252,246,0.7)" : "var(--mute)" }}>
               {dateInfo.dayLabel}
+              <span style={{ opacity: 0.6, fontSize: 10 }}>{showCalendar ? "▲" : "▼"}</span>
             </div>
-          </div>
+          </button>
           <button onClick={() => navDate(1)}
                   className="btn-tactile w-10 h-10 sm:w-11 sm:h-11 rounded-lg border-2 flex items-center justify-center shrink-0"
                   style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}
@@ -1803,9 +2100,9 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
         </div>
         {showCalendar && (
           <div className="mt-3 pt-3 border-t" style={{ borderColor: "var(--line)" }}>
-            <MiniCalendar selectedDate={selectedDate}
-                          onPick={(ds) => { setSelectedDate(ds); setShowCalendar(false); }}
-                          attendance={attendance} />
+            <DatePicker selectedDate={selectedDate}
+                        onPick={(ds) => { setSelectedDate(ds); setShowCalendar(false); }}
+                        attendance={attendance} />
           </div>
         )}
       </section>
@@ -2430,15 +2727,19 @@ function DailyView({ selectedDate, setSelectedDate, attendance, setTab, setPerio
             DAILY · 每日總覽
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setShowCalendar(s => !s)}
+            <button onClick={() => {
+                      const today = toDateStr(new Date());
+                      setSelectedDate(today);
+                      setShowCalendar(false);
+                    }}
                     className="btn-tactile flex items-center gap-1 text-[10px] sm:text-xs px-2.5 py-1 rounded-md border"
                     style={{
-                      borderColor: showCalendar ? "var(--ink)" : "var(--line-strong)",
-                      background: showCalendar ? "var(--ink)" : "transparent",
-                      color: showCalendar ? "var(--bg)" : "var(--ink-2)",
-                    }}>
-              <CalendarDays size={12} strokeWidth={2.5} />
-              {showCalendar ? "收合" : "選日期"}
+                      borderColor: "var(--accent)",
+                      background: "var(--accent-bg)",
+                      color: "var(--accent)",
+                    }}
+                    title="跳到今天">
+              ⭐ 今天
             </button>
             <button onClick={exportDay}
                     className="btn-tactile flex items-center gap-1 text-[10px] sm:text-xs px-2.5 py-1 rounded-md border"
@@ -2454,14 +2755,23 @@ function DailyView({ selectedDate, setSelectedDate, attendance, setTab, setPerio
                   style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
             <ChevronLeft size={18} strokeWidth={2.5} />
           </button>
-          <div className="flex-1 text-center px-2 py-2 rounded-lg" style={{ background: "var(--panel-2)" }}>
-            <div className="display-cn text-xl sm:text-3xl leading-tight" style={{ color: "var(--ink)" }}>
+          <button onClick={() => setShowCalendar(s => !s)}
+                  className="btn-tactile flex-1 text-center px-2 py-2 rounded-lg border-2"
+                  style={{
+                    background: showCalendar ? "var(--ink)" : "var(--panel-2)",
+                    borderColor: showCalendar ? "var(--ink)" : "var(--line)",
+                  }}
+                  title="點此切換月份/年份">
+            <div className="display-cn text-xl sm:text-3xl leading-tight"
+                 style={{ color: showCalendar ? "var(--bg)" : "var(--ink)" }}>
               {selectedDate.split("-").join(" / ")}
             </div>
-            <div className="num text-xs sm:text-sm" style={{ color: "var(--mute)" }}>
+            <div className="num text-xs sm:text-sm flex items-center justify-center gap-1"
+                 style={{ color: showCalendar ? "rgba(255,252,246,0.7)" : "var(--mute)" }}>
               {dateInfo.dayLabel}
+              <span style={{ opacity: 0.6, fontSize: 10 }}>{showCalendar ? "▲" : "▼"}</span>
             </div>
-          </div>
+          </button>
           <button onClick={() => navDate(1)}
                   className="btn-tactile w-10 h-10 sm:w-11 sm:h-11 rounded-lg border-2 flex items-center justify-center shrink-0"
                   style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
@@ -2470,9 +2780,9 @@ function DailyView({ selectedDate, setSelectedDate, attendance, setTab, setPerio
         </div>
         {showCalendar && (
           <div className="mt-3 pt-3 border-t" style={{ borderColor: "var(--line)" }}>
-            <MiniCalendar selectedDate={selectedDate}
-                          onPick={(ds) => { setSelectedDate(ds); setShowCalendar(false); }}
-                          attendance={attendance} />
+            <DatePicker selectedDate={selectedDate}
+                        onPick={(ds) => { setSelectedDate(ds); setShowCalendar(false); }}
+                        attendance={attendance} />
           </div>
         )}
       </section>
