@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, createContext, useContext } from "react";
+import { useState, useEffect, useMemo, useRef, createContext, useContext } from "react";
 import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
 import { doc, onSnapshot, setDoc, collection, addDoc, query, orderBy, limit, getDocs, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db, googleProvider } from "./firebase";
@@ -1279,15 +1279,26 @@ function TabBar({ tab, setTab, isOwner }) {
 
 // ============ MINI CALENDAR ============
 function MiniCalendar({ selectedDate, onPick, attendance }) {
-  // Derive Y, M from selectedDate so calendar always shows the month being viewed
+  // viewY/viewM 是月曆當前顯示的月份
   const [viewY, setViewY] = useState(() => monthFromDate(selectedDate).Y);
   const [viewM, setViewM] = useState(() => monthFromDate(selectedDate).M);
-  // Keep view in sync if selectedDate jumps to another month externally
+  // 追蹤上次點選的日期，用來區分「使用者點月曆」vs「外部改 selectedDate」
+  const lastPickedRef = useRef(selectedDate);
+
+  // 當 selectedDate 「外部」改變時（不是透過點此月曆）→ 同步月曆 view
   useEffect(() => {
+    if (selectedDate === lastPickedRef.current) return; // 是內部點選引起的，不同步
     const { Y: nY, M: nM } = monthFromDate(selectedDate);
     setViewY(nY);
     setViewM(nM);
+    lastPickedRef.current = selectedDate;
   }, [selectedDate]);
+
+  // 包裝 onPick，記錄已選的日期
+  const handlePick = (ds) => {
+    lastPickedRef.current = ds;
+    onPick(ds);
+  };
 
   const Y = viewY, M = viewM;
   const goPrev = () => {
@@ -1371,7 +1382,7 @@ function MiniCalendar({ selectedDate, onPick, attendance }) {
           const isAllClosed = !isOff && amV === "closed" && pmV === "closed";
           return (
             <button key={i}
-                    onClick={() => !isOff && onPick(ds)}
+                    onClick={() => !isOff && handlePick(ds)}
                     disabled={isOff}
                     className="btn-tactile relative aspect-square rounded-lg flex flex-col items-center justify-center text-sm sm:text-base"
                     style={{
