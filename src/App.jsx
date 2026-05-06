@@ -428,48 +428,72 @@ function AttendanceApp({ user }) {
     const personData = roster.map(p => {
       let scheduled = 0, present = 0, absent = 0, pending = 0, late = 0, bonus = 0;
       let yyAm = 0, yyPm = 0;
+      let soloAm = 0, soloPm = 0;  // 個練計數
+      let yyAmPaid = 0, yyPmPaid = 0;  // 實際應收場次（排除個練日）
       TRAINING_DAYS.forEach(day => {
         const dayData = attendance[day.dateStr] || {};
         const amVenue = getVenue(attendance, day.dateStr, "am");
         const pmVenue = getVenue(attendance, day.dateStr, "pm");
+        // 此人當日是否個練（任一場勾就整天免費）
+        const dayHasSolo = !!(dayData.am_solo?.[p.seq] || dayData.pm_solo?.[p.seq]);
         // AM
         const amSch = p.sch[day.info.amIdx] === 1;
         const amAc = dayData.am?.[p.seq];
         const amIsLate = !!dayData.am_late?.[p.seq];
+        const amIsSolo = !!dayData.am_solo?.[p.seq];
         if (amSch) scheduled++;
         if (amSch && amAc === "present") {
           present++;
           if (amIsLate) late++;
-          if (amVenue === "yongyun") yyAm++;
+          if (amVenue === "yongyun") {
+            yyAm++;
+            if (amIsSolo) soloAm++;
+            if (!dayHasSolo) yyAmPaid++;
+          }
         }
         if (amSch && amAc === "absent") absent++;
         if (amSch && !amAc) pending++;
         if (!amSch && amAc === "present") {
           bonus++;
           if (amIsLate) late++;
-          if (amVenue === "yongyun") yyAm++;
+          if (amVenue === "yongyun") {
+            yyAm++;
+            if (amIsSolo) soloAm++;
+            if (!dayHasSolo) yyAmPaid++;
+          }
         }
         // PM
         const pmSch = p.sch[day.info.pmIdx] === 1;
         const pmAc = dayData.pm?.[p.seq];
         const pmIsLate = !!dayData.pm_late?.[p.seq];
+        const pmIsSolo = !!dayData.pm_solo?.[p.seq];
         if (pmSch) scheduled++;
         if (pmSch && pmAc === "present") {
           present++;
           if (pmIsLate) late++;
-          if (pmVenue === "yongyun") yyPm++;
+          if (pmVenue === "yongyun") {
+            yyPm++;
+            if (pmIsSolo) soloPm++;
+            if (!dayHasSolo) yyPmPaid++;
+          }
         }
         if (pmSch && pmAc === "absent") absent++;
         if (pmSch && !pmAc) pending++;
         if (!pmSch && pmAc === "present") {
           bonus++;
           if (pmIsLate) late++;
-          if (pmVenue === "yongyun") yyPm++;
+          if (pmVenue === "yongyun") {
+            yyPm++;
+            if (pmIsSolo) soloPm++;
+            if (!dayHasSolo) yyPmPaid++;
+          }
         }
       });
       const rate = scheduled === 0 ? 0 : Math.round(present / scheduled * 100);
       const yyTotal = yyAm + yyPm;
-      const yyFee = yyTotal * VENUE_FEE;
+      const yyPaid = yyAmPaid + yyPmPaid;
+      const soloTotal = soloAm + soloPm;
+      const yyFee = yyPaid * VENUE_FEE;
       return {
         "序號": p.seq,
         "班級": p.cls,
@@ -486,6 +510,8 @@ function AttendanceApp({ user }) {
         "永運早訓": yyAm,
         "永運午訓": yyPm,
         "永運總場": yyTotal,
+        "個練場次": soloTotal,
+        "應收場次": yyPaid,
         "應收費用": yyFee > 0 ? yyFee : "",
       };
     });
@@ -508,14 +534,15 @@ function AttendanceApp({ user }) {
       "永運早訓": personData.reduce((a, r) => a + r["永運早訓"], 0),
       "永運午訓": personData.reduce((a, r) => a + r["永運午訓"], 0),
       "永運總場": personData.reduce((a, r) => a + r["永運總場"], 0),
+      "個練場次": personData.reduce((a, r) => a + r["個練場次"], 0),
+      "應收場次": personData.reduce((a, r) => a + r["應收場次"], 0),
       "應收費用": totalFee,
     });
     const ws1 = XLSX.utils.json_to_sheet(personData);
-    // 欄寬
     ws1["!cols"] = [
       { wch: 6 }, { wch: 8 }, { wch: 6 }, { wch: 10 }, { wch: 8 },
       { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 8 }, { wch: 6 }, { wch: 6 },
-      { wch: 8 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 10 },
+      { wch: 8 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 10 },
     ];
     XLSX.utils.book_append_sheet(wb, ws1, "個人匯總");
 
@@ -528,26 +555,37 @@ function AttendanceApp({ user }) {
         const slot = dayData[per] || {};
         const lateSlot = dayData[per === "am" ? "am_late" : "pm_late"] || {};
         const venue = getVenue(attendance, day.dateStr, per);
-        let sch = 0, on = 0, no = 0, pn = 0, bn = 0, lt = 0, yyOn = 0;
+        let sch = 0, on = 0, no = 0, pn = 0, bn = 0, lt = 0, yyOn = 0, yyPaid = 0, soloCnt = 0;
         roster.forEach(p => {
           const isSch = p.sch[idx] === 1;
           const ac = slot[p.seq];
           const isLate = !!lateSlot[p.seq];
+          // 整天個練判斷
+          const dayHasSolo = !!(dayData.am_solo?.[p.seq] || dayData.pm_solo?.[p.seq]);
+          const isSoloThis = !!(per === "am" ? dayData.am_solo?.[p.seq] : dayData.pm_solo?.[p.seq]);
           if (isSch) sch++;
           if (isSch && ac === "present") {
             on++;
             if (isLate) lt++;
-            if (venue === "yongyun") yyOn++;
+            if (venue === "yongyun") {
+              yyOn++;
+              if (isSoloThis) soloCnt++;
+              if (!dayHasSolo) yyPaid++;
+            }
           }
           if (isSch && ac === "absent") no++;
           if (isSch && !ac) pn++;
           if (!isSch && ac === "present") {
             bn++;
             if (isLate) lt++;
-            if (venue === "yongyun") yyOn++;
+            if (venue === "yongyun") {
+              yyOn++;
+              if (isSoloThis) soloCnt++;
+              if (!dayHasSolo) yyPaid++;
+            }
           }
         });
-        const fee = venue === "yongyun" ? yyOn * VENUE_FEE : 0;
+        const fee = venue === "yongyun" ? yyPaid * VENUE_FEE : 0;
         sessionData.push({
           "日期": day.dateStr,
           "星期": day.info.dayLabel,
@@ -560,6 +598,7 @@ function AttendanceApp({ user }) {
           "補訓": bn,
           "遲到": lt,
           "出席率": sch === 0 ? "—" : `${Math.round(on / sch * 100)}%`,
+          "個練": venue === "yongyun" ? soloCnt : "",
           "永運費": fee > 0 ? fee : "",
           "整日備註": dayData.notes || "",
         });
@@ -578,6 +617,7 @@ function AttendanceApp({ user }) {
       "補訓": sessionData.reduce((a, r) => a + r["補訓"], 0),
       "遲到": sessionData.reduce((a, r) => a + r["遲到"], 0),
       "出席率": "",
+      "個練": sessionData.reduce((a, r) => a + (typeof r["個練"] === "number" ? r["個練"] : 0), 0),
       "永運費": sessionTotalFee,
       "整日備註": "",
     });
@@ -585,7 +625,7 @@ function AttendanceApp({ user }) {
     ws2["!cols"] = [
       { wch: 12 }, { wch: 6 }, { wch: 6 }, { wch: 8 },
       { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 8 }, { wch: 6 }, { wch: 6 },
-      { wch: 8 }, { wch: 8 }, { wch: 30 },
+      { wch: 8 }, { wch: 6 }, { wch: 8 }, { wch: 30 },
     ];
     XLSX.utils.book_append_sheet(wb, ws2, "場次彙整");
 
@@ -598,14 +638,19 @@ function AttendanceApp({ user }) {
         const slot = dayData[per] || {};
         const lateSlot = dayData[per === "am" ? "am_late" : "pm_late"] || {};
         const noteSlot = dayData[per === "am" ? "am_notes" : "pm_notes"] || {};
+        const soloSlot = dayData[per === "am" ? "am_solo" : "pm_solo"] || {};
         const venue = getVenue(attendance, day.dateStr, per);
         const isYy = venue === "yongyun";
         roster.forEach(p => {
           const sch = p.sch[idx] === 1;
           const ac = slot[p.seq];
           const isLate = !!lateSlot[p.seq];
+          const isSolo = !!soloSlot[p.seq];
+          // 整天個練判斷
+          const dayHasSolo = !!(dayData.am_solo?.[p.seq] || dayData.pm_solo?.[p.seq]);
           const note = noteSlot[p.seq] || "";
-          const fee = isYy && ac === "present" ? VENUE_FEE : "";
+          // 永運場次出席：個練日 → 免費；否則 $50
+          const fee = isYy && ac === "present" ? (dayHasSolo ? "" : VENUE_FEE) : "";
           fullData.push({
             "日期": day.dateStr,
             "星期": day.info.dayLabel,
@@ -619,6 +664,7 @@ function AttendanceApp({ user }) {
             "表定": sch ? "出席" : "不出席",
             "實際": ac === "present" ? "出席" : ac === "absent" ? "未到" : "未點名",
             "遲到": isLate ? "是" : "",
+            "個練": isYy && isSolo ? "是" : "",
             "備註": note,
             "永運費": fee,
           });
@@ -639,6 +685,7 @@ function AttendanceApp({ user }) {
           "表定": "",
           "實際": "",
           "遲到": "",
+          "個練": "",
           "備註": dayData.notes,
           "永運費": "",
         });
@@ -648,7 +695,7 @@ function AttendanceApp({ user }) {
     ws3["!cols"] = [
       { wch: 12 }, { wch: 6 }, { wch: 8 }, { wch: 6 },
       { wch: 6 }, { wch: 8 }, { wch: 6 }, { wch: 10 }, { wch: 8 },
-      { wch: 8 }, { wch: 8 }, { wch: 6 }, { wch: 24 }, { wch: 8 },
+      { wch: 8 }, { wch: 8 }, { wch: 6 }, { wch: 6 }, { wch: 24 }, { wch: 8 },
     ];
     XLSX.utils.book_append_sheet(wb, ws3, "完整紀錄");
 
@@ -1007,14 +1054,22 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
   const sessionAtt = attendance[selectedDate]?.[period] || {};
   const lateKey = period === "am" ? "am_late" : "pm_late";
   const notesKey = period === "am" ? "am_notes" : "pm_notes";
+  const soloKey = period === "am" ? "am_solo" : "pm_solo";
   const sessionLate = attendance[selectedDate]?.[lateKey] || {};
   const sessionNotes = attendance[selectedDate]?.[notesKey] || {};
+  const sessionSolo = attendance[selectedDate]?.[soloKey] || {};
+  // 個練判斷：當日任一場勾個練 → 整天免費
+  const dayAnyAmSolo = attendance[selectedDate]?.am_solo || {};
+  const dayAnyPmSolo = attendance[selectedDate]?.pm_solo || {};
   const dayNote = attendance[selectedDate]?.notes || "";
 
   const rows = useMemo(() => roster.map(p => {
     const scheduled = p.sch[sessionIdx] === 1;
     const actual = sessionAtt[p.seq] || null;
     const late = !!sessionLate[p.seq];
+    const solo = !!sessionSolo[p.seq];
+    // 此人當日是否個練（任一場勾就算）
+    const dayHasSolo = !!(dayAnyAmSolo[p.seq] || dayAnyPmSolo[p.seq]);
     const note = sessionNotes[p.seq] || "";
     let status = "pending_excused";
     if (scheduled && actual === "present") status = "on_time";
@@ -1022,8 +1077,8 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
     else if (!scheduled && actual === "present") status = "bonus";
     else if (!scheduled && actual === "absent") status = "confirmed_excused";
     else if (scheduled && !actual) status = "pending";
-    return { ...p, scheduled, actual, status, late, note };
-  }), [sessionIdx, sessionAtt, sessionLate, sessionNotes, roster]);
+    return { ...p, scheduled, actual, status, late, solo, dayHasSolo, note };
+  }), [sessionIdx, sessionAtt, sessionLate, sessionNotes, sessionSolo, dayAnyAmSolo, dayAnyPmSolo, roster]);
 
   const stats = useMemo(() => ({
     scheduledTotal: rows.filter(r => r.scheduled).length,
@@ -1054,12 +1109,18 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
       if (slot[seq] === st) { delete slot[seq]; after = null; }
       else { slot[seq] = st; after = st; }
       day[period] = slot;
-      // 切換到非 present 時順便清掉 late 標記
+      // 切換到非 present 時順便清掉 late 與 solo 標記
       const lateKey = period === "am" ? "am_late" : "pm_late";
       const lateSlot = { ...(day[lateKey] || {}) };
       if (after !== "present" && lateSlot[seq]) {
         delete lateSlot[seq];
         day[lateKey] = lateSlot;
+      }
+      const soloKeyLocal = period === "am" ? "am_solo" : "pm_solo";
+      const soloSlot = { ...(day[soloKeyLocal] || {}) };
+      if (after !== "present" && soloSlot[seq]) {
+        delete soloSlot[seq];
+        day[soloKeyLocal] = soloSlot;
       }
       return { ...prev, [selectedDate]: day };
     }, {
@@ -1093,6 +1154,31 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
         targetLabel: `${selectedDate} ${period === "am" ? "早訓" : "午訓"} - ${person?.name || `#${seq}`} - 遲到標記`,
         before: { late: beforeLate },
         after: { late: !beforeLate },
+      },
+    });
+  };
+
+  // 切換「個練」標記（永運場次 + 出席時生效）
+  // 注意：當日任一場勾個練 → 整天永運免費（在費用計算時處理）
+  const markSolo = (seq) => {
+    if (locked) { triggerLockedAlert(); return; }
+    const person = ROSTER_lookup(roster, seq);
+    const soloKey = period === "am" ? "am_solo" : "pm_solo";
+    const beforeSolo = !!(attendance[selectedDate]?.[soloKey]?.[seq]);
+    setAttendance(prev => {
+      const day = { ...(prev[selectedDate] || {}) };
+      const soloSlot = { ...(day[soloKey] || {}) };
+      if (soloSlot[seq]) { delete soloSlot[seq]; }
+      else { soloSlot[seq] = true; }
+      day[soloKey] = soloSlot;
+      return { ...prev, [selectedDate]: day };
+    }, {
+      dateStr: selectedDate,
+      logPayload: {
+        target: `attendance/${selectedDate}/${period}/${seq}/solo`,
+        targetLabel: `${selectedDate} ${period === "am" ? "早訓" : "午訓"} - ${person?.name || `#${seq}`} - 個練標記`,
+        before: { solo: beforeSolo },
+        after: { solo: !beforeSolo },
       },
     });
   };
@@ -1478,7 +1564,7 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
               <div className="flex-1 border-b border-dashed" style={{ borderColor: "var(--line-strong)" }} />
             </div>
             <div className="space-y-2">
-              {g.members.map(m => <CallRow key={m.seq} m={m} mark={mark} markLate={markLate} setPersonNote={setPersonNote} />)}
+              {g.members.map(m => <CallRow key={m.seq} m={m} mark={mark} markLate={markLate} markSolo={markSolo} setPersonNote={setPersonNote} isYongyun={currentVenue === "yongyun"} />)}
             </div>
           </div>
         ))}
@@ -1506,7 +1592,7 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
   );
 }
 
-function CallRow({ m, mark, markLate, setPersonNote }) {
+function CallRow({ m, mark, markLate, markSolo, setPersonNote, isYongyun }) {
   const isPresent = m.actual === "present";
   const isAbsent = m.actual === "absent";
   const [showNote, setShowNote] = useState(!!m.note);
@@ -1526,10 +1612,24 @@ function CallRow({ m, mark, markLate, setPersonNote }) {
   // 遲到時用橘色框框
   if (m.late && isPresent) { bd = "#E07B30"; bg = "rgba(224, 123, 48, 0.08)"; }
 
+  // 個練優先級高於遲到（紫色）— 出席+永運+當日有勾任一場才生效
+  if (isYongyun && m.dayHasSolo && isPresent) {
+    bd = "#7C4DBC";
+    bg = "rgba(124, 77, 188, 0.08)";
+  }
+
   let actualLabel = null;
-  if (m.status === "on_time") actualLabel = { t: m.late ? "✓ 出席（遲到）" : "✓ 實際出席", b: m.late ? "#E07B30" : "var(--green)", f: "#fff" };
+  if (m.status === "on_time") {
+    if (m.solo) actualLabel = { t: "✓ 出席（個練）", b: "#7C4DBC", f: "#fff" };
+    else if (m.late) actualLabel = { t: "✓ 出席（遲到）", b: "#E07B30", f: "#fff" };
+    else actualLabel = { t: "✓ 實際出席", b: "var(--green)", f: "#fff" };
+  }
   else if (m.status === "no_show") actualLabel = { t: "✗ 未到", b: "var(--red)", f: "#fff" };
-  else if (m.status === "bonus") actualLabel = { t: m.late ? "+ 補訓（遲到）" : "+ 補訓出席", b: m.late ? "#E07B30" : "var(--blue)", f: "#fff" };
+  else if (m.status === "bonus") {
+    if (m.solo) actualLabel = { t: "+ 補訓（個練）", b: "#7C4DBC", f: "#fff" };
+    else if (m.late) actualLabel = { t: "+ 補訓（遲到）", b: "#E07B30", f: "#fff" };
+    else actualLabel = { t: "+ 補訓出席", b: "var(--blue)", f: "#fff" };
+  }
   else if (m.status === "confirmed_excused") actualLabel = { t: "已確認請假", b: "var(--ink-2)", f: "#fff" };
 
   const handleNoteBlur = () => {
@@ -1553,6 +1653,14 @@ function CallRow({ m, mark, markLate, setPersonNote }) {
           <div className="flex items-baseline gap-2 flex-wrap">
             <span className="text-base sm:text-lg font-medium truncate" style={{ color: "var(--ink)" }}>{m.name}</span>
             <span className="num text-[10px] sm:text-xs" style={{ color: "var(--mute)" }}>{m.cls}-{pad(m.num)}</span>
+            {/* 個練 chip：當日有任一場勾個練 + 永運場 → 顯示 */}
+            {isYongyun && m.dayHasSolo && (
+              <span className="text-[10px] sm:text-xs px-1.5 py-0.5 rounded font-bold"
+                    style={{ background: "#7C4DBC", color: "#fff" }}
+                    title="當日已勾選個練，整天永運免費">
+                ⭐ 個練（免費）
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1 mt-1 flex-wrap">
             <span className="text-[10px] sm:text-xs px-1.5 py-0.5 rounded font-medium"
@@ -1608,7 +1716,7 @@ function CallRow({ m, mark, markLate, setPersonNote }) {
         </div>
       </div>
 
-      {/* 遲到標記（出席時才顯示） */}
+      {/* 出席時的次要標記列：遲到 + 個練（永運場才有個練） */}
       {isPresent && (
         <div className="flex items-center gap-3 ml-7 flex-wrap">
           <button onClick={() => markLate(m.seq)}
@@ -1621,6 +1729,20 @@ function CallRow({ m, mark, markLate, setPersonNote }) {
             <span style={{ fontSize: 11 }}>{m.late ? "✓" : "○"}</span>
             遲到未下水
           </button>
+          {/* 個練 — 只有永運場才顯示 */}
+          {isYongyun && (
+            <button onClick={() => markSolo(m.seq)}
+                    className="btn-tactile flex items-center gap-1.5 px-2 py-1 rounded text-[11px] sm:text-xs font-medium"
+                    style={{
+                      background: m.solo ? "#7C4DBC" : "transparent",
+                      color: m.solo ? "#fff" : "#7C4DBC",
+                      border: `1.5px solid #7C4DBC`,
+                    }}
+                    title="勾選後當日永運免費">
+              <span style={{ fontSize: 11 }}>{m.solo ? "✓" : "○"}</span>
+              個練 ⭐
+            </button>
+          )}
           {!showNote && (
             <button onClick={() => setShowNote(true)}
                     className="btn-tactile text-[11px] sm:text-xs px-2 py-1 rounded"
@@ -2131,25 +2253,37 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS 
   const personStats = useMemo(() => roster.map(p => {
     let scheduled = 0, present = 0, absent = 0, bonus = 0, pending = 0, late = 0;
     let yyAm = 0, yyPm = 0; // 永運場次出席（早/午）
+    let soloAm = 0, soloPm = 0; // 個練場次（早/午）
+    let yyAmPaid = 0, yyPmPaid = 0; // 應收場次（排除整天個練日）
     const matrix = TRAINING_DAYS.map(day => {
       const dayData = attendance[day.dateStr] || {};
       const amVenue = getVenue(attendance, day.dateStr, "am");
       const pmVenue = getVenue(attendance, day.dateStr, "pm");
+      const dayHasSolo = !!(dayData.am_solo?.[p.seq] || dayData.pm_solo?.[p.seq]);
       const am = (() => {
         const sch = p.sch[day.info.amIdx] === 1;
         const ac = dayData.am?.[p.seq];
         const isLate = !!dayData.am_late?.[p.seq];
+        const isSolo = !!dayData.am_solo?.[p.seq];
         if (sch) scheduled++;
         if (sch && ac === "present") {
           present++; if (isLate) late++;
-          if (amVenue === "yongyun") yyAm++;
+          if (amVenue === "yongyun") {
+            yyAm++;
+            if (isSolo) soloAm++;
+            if (!dayHasSolo) yyAmPaid++;
+          }
           return "on_time";
         }
         if (sch && ac === "absent") { absent++; return "no_show"; }
         if (sch && !ac) { pending++; return "pending"; }
         if (!sch && ac === "present") {
           bonus++; if (isLate) late++;
-          if (amVenue === "yongyun") yyAm++;
+          if (amVenue === "yongyun") {
+            yyAm++;
+            if (isSolo) soloAm++;
+            if (!dayHasSolo) yyAmPaid++;
+          }
           return "bonus";
         }
         if (!sch && ac === "absent") return "confirmed_excused";
@@ -2159,17 +2293,26 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS 
         const sch = p.sch[day.info.pmIdx] === 1;
         const ac = dayData.pm?.[p.seq];
         const isLate = !!dayData.pm_late?.[p.seq];
+        const isSolo = !!dayData.pm_solo?.[p.seq];
         if (sch) scheduled++;
         if (sch && ac === "present") {
           present++; if (isLate) late++;
-          if (pmVenue === "yongyun") yyPm++;
+          if (pmVenue === "yongyun") {
+            yyPm++;
+            if (isSolo) soloPm++;
+            if (!dayHasSolo) yyPmPaid++;
+          }
           return "on_time";
         }
         if (sch && ac === "absent") { absent++; return "no_show"; }
         if (sch && !ac) { pending++; return "pending"; }
         if (!sch && ac === "present") {
           bonus++; if (isLate) late++;
-          if (pmVenue === "yongyun") yyPm++;
+          if (pmVenue === "yongyun") {
+            yyPm++;
+            if (isSolo) soloPm++;
+            if (!dayHasSolo) yyPmPaid++;
+          }
           return "bonus";
         }
         if (!sch && ac === "absent") return "confirmed_excused";
@@ -2179,8 +2322,15 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS 
     });
     const rate = scheduled === 0 ? 0 : present / scheduled;
     const yyTotal = yyAm + yyPm;
-    const yyFee = yyTotal * VENUE_FEE;
-    return { ...p, scheduled, present, absent, bonus, pending, late, rate, matrix, yyAm, yyPm, yyTotal, yyFee };
+    const yyPaid = yyAmPaid + yyPmPaid;
+    const soloTotal = soloAm + soloPm;
+    const yyFee = yyPaid * VENUE_FEE;
+    return {
+      ...p, scheduled, present, absent, bonus, pending, late, rate, matrix,
+      yyAm, yyPm, yyTotal, yyFee,
+      soloAm, soloPm, soloTotal,
+      yyAmPaid, yyPmPaid, yyPaid,
+    };
   }), [attendance, roster, TRAINING_DAYS]);
 
   // 永運場次統計（共幾次永運訓練、總費用）
@@ -2191,9 +2341,11 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS 
       if (getVenue(attendance, day.dateStr, "pm") === "yongyun") yyPmSessions++;
     });
     const totalFee = personStats.reduce((acc, s) => acc + s.yyFee, 0);
-    const totalAttendees = personStats.reduce((acc, s) => acc + s.yyTotal, 0);
-    const paidPeople = personStats.filter(s => s.yyTotal > 0).length;
-    return { yyAmSessions, yyPmSessions, totalFee, totalAttendees, paidPeople };
+    const totalAttendees = personStats.reduce((acc, s) => acc + s.yyPaid, 0);
+    const paidPeople = personStats.filter(s => s.yyPaid > 0).length;
+    const soloAttendees = personStats.reduce((acc, s) => acc + s.soloTotal, 0);
+    const soloPeople = personStats.filter(s => s.soloTotal > 0).length;
+    return { yyAmSessions, yyPmSessions, totalFee, totalAttendees, paidPeople, soloAttendees, soloPeople };
   }, [personStats, attendance, TRAINING_DAYS]);
 
   const team = personStats.reduce((acc, s) => ({
@@ -2324,29 +2476,28 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS 
 
 function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendance }) {
   const [expanded, setExpanded] = useState(false);
+  // 應收名單：有應收費用的人（排除整月都個練的人）
   const paidList = useMemo(() =>
-    [...personStats].filter(s => s.yyTotal > 0).sort((a, b) => b.yyFee - a.yyFee || a.seq - b.seq),
+    [...personStats].filter(s => s.yyPaid > 0).sort((a, b) => b.yyFee - a.yyFee || a.seq - b.seq),
+    [personStats]);
+  // 個練名單：有個練場次的人
+  const soloList = useMemo(() =>
+    [...personStats].filter(s => s.soloTotal > 0).sort((a, b) => b.soloTotal - a.soloTotal || a.seq - b.seq),
     [personStats]);
 
   const exportFee = () => {
     const wb = XLSX.utils.book_new();
-    const data = [];
-    // 標題列
-    data.push({ "項目": `${Y} 年 ${M + 1} 月 永運費用統計` });
-    data.push({ "項目": `本月永運場次：早訓 ${yyStats.yyAmSessions} 場 + 午訓 ${yyStats.yyPmSessions} 場 = 共 ${yyStats.yyAmSessions + yyStats.yyPmSessions} 場` });
-    data.push({ "項目": `每場次費用：$${VENUE_FEE} / 人 / 次` });
-    data.push({ "項目": "" });
 
-    // 表格
+    // ========== Sheet 1: 應收費用清單 ==========
     const list = paidList.map(s => ({
       "序號": s.seq,
       "班級": s.cls,
       "座號": s.num,
       "姓名": s.name,
       "年級": GRADE_NAMES[s.grade],
-      "早訓出席": s.yyAm,
-      "午訓出席": s.yyPm,
-      "永運總場": s.yyTotal,
+      "早訓出席": s.yyAmPaid,
+      "午訓出席": s.yyPmPaid,
+      "應收場次": s.yyPaid,
       "應收費用": s.yyFee,
     }));
     list.push({
@@ -2357,20 +2508,17 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
       "年級": "",
       "早訓出席": list.reduce((a, r) => a + r["早訓出席"], 0),
       "午訓出席": list.reduce((a, r) => a + r["午訓出席"], 0),
-      "永運總場": list.reduce((a, r) => a + r["永運總場"], 0),
+      "應收場次": list.reduce((a, r) => a + r["應收場次"], 0),
       "應收費用": list.reduce((a, r) => a + r["應收費用"], 0),
     });
-
     const ws = XLSX.utils.json_to_sheet(list, { origin: "A6" });
-    // 在最上方加標題
     XLSX.utils.sheet_add_aoa(ws, [
-      [`${Y} 年 ${M + 1} 月 永運費用統計`],
+      [`${Y} 年 ${M + 1} 月 永運費用統計（應收）`],
       [`本月永運場次：早訓 ${yyStats.yyAmSessions} 場 + 午訓 ${yyStats.yyPmSessions} 場 = 共 ${yyStats.yyAmSessions + yyStats.yyPmSessions} 場`],
       [`每場次費用：$${VENUE_FEE} / 人 / 次`],
-      [`應收人數：${yyStats.paidPeople} 人 · 總人次：${yyStats.totalAttendees} · 總費用：$${yyStats.totalFee}`],
+      [`應收人數：${yyStats.paidPeople} 人 · 應收人次：${yyStats.totalAttendees} · 應收費用：$${yyStats.totalFee}`],
       [],
     ], { origin: "A1" });
-
     ws["!cols"] = [
       { wch: 6 }, { wch: 8 }, { wch: 6 }, { wch: 12 }, { wch: 8 },
       { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 12 },
@@ -2381,7 +2529,57 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
       { s: { r: 2, c: 0 }, e: { r: 2, c: 8 } },
       { s: { r: 3, c: 0 }, e: { r: 3, c: 8 } },
     ];
-    XLSX.utils.book_append_sheet(wb, ws, "永運費用");
+    XLSX.utils.book_append_sheet(wb, ws, "應收費用");
+
+    // ========== Sheet 2: 個練名單（不計費） ==========
+    if (soloList.length > 0) {
+      const list2 = soloList.map(s => ({
+        "序號": s.seq,
+        "班級": s.cls,
+        "座號": s.num,
+        "姓名": s.name,
+        "年級": GRADE_NAMES[s.grade],
+        "永運早訓": s.yyAm,
+        "永運午訓": s.yyPm,
+        "永運總場": s.yyTotal,
+        "個練早訓": s.soloAm,
+        "個練午訓": s.soloPm,
+        "個練總場": s.soloTotal,
+        "應收費用": "$0（個練自費）",
+      }));
+      list2.push({
+        "序號": "",
+        "班級": "",
+        "座號": "",
+        "姓名": "─ 合計 ─",
+        "年級": "",
+        "永運早訓": list2.reduce((a, r) => a + r["永運早訓"], 0),
+        "永運午訓": list2.reduce((a, r) => a + r["永運午訓"], 0),
+        "永運總場": list2.reduce((a, r) => a + r["永運總場"], 0),
+        "個練早訓": list2.reduce((a, r) => a + r["個練早訓"], 0),
+        "個練午訓": list2.reduce((a, r) => a + r["個練午訓"], 0),
+        "個練總場": list2.reduce((a, r) => a + r["個練總場"], 0),
+        "應收費用": "",
+      });
+      const ws2 = XLSX.utils.json_to_sheet(list2, { origin: "A5" });
+      XLSX.utils.sheet_add_aoa(ws2, [
+        [`${Y} 年 ${M + 1} 月 個練名單（自費，不計入永運費）`],
+        [`個練人數：${yyStats.soloPeople} 人 · 個練人次：${yyStats.soloAttendees}`],
+        [`規則：當日任一場勾「個練」→ 整天永運免費`],
+        [],
+      ], { origin: "A1" });
+      ws2["!cols"] = [
+        { wch: 6 }, { wch: 8 }, { wch: 6 }, { wch: 12 }, { wch: 8 },
+        { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 16 },
+      ];
+      ws2["!merges"] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 11 } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: 11 } },
+        { s: { r: 2, c: 0 }, e: { r: 2, c: 11 } },
+      ];
+      XLSX.utils.book_append_sheet(wb, ws2, "個練名單");
+    }
+
     XLSX.writeFile(wb, `永運費用_${Y}年${M + 1}月.xlsx`);
   };
 
@@ -2412,8 +2610,13 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
             <span className="num text-2xl sm:text-3xl">${yyStats.totalFee}</span>
           </div>
           <div className="text-[11px] sm:text-xs mt-0.5" style={{ color: VENUES.yongyun.color, opacity: 0.8 }}>
-            {yyStats.paidPeople} 人 · {yyStats.totalAttendees} 人次 ·
+            應收 {yyStats.paidPeople} 人 · {yyStats.totalAttendees} 人次 ·
             早訓 {yyStats.yyAmSessions} 場 + 午訓 {yyStats.yyPmSessions} 場
+            {yyStats.soloPeople > 0 && (
+              <span style={{ marginLeft: 6, color: "#7C4DBC", fontWeight: 700 }}>
+                · ⭐ 另 {yyStats.soloPeople} 人個練（自費）
+              </span>
+            )}
           </div>
         </div>
         <div className="flex gap-2">
@@ -2434,12 +2637,17 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
 
       {expanded && (
         <div style={{ background: "rgba(255,255,255,0.6)", borderTop: `1px solid ${VENUES.yongyun.color}` }}>
+          {/* 應收費用清單 */}
           {paidList.length === 0 ? (
             <div className="p-4 text-center text-sm" style={{ color: VENUES.yongyun.color }}>
-              尚無人出席永運場次
+              尚無應收費用紀錄
             </div>
           ) : (
             <>
+              <div className="px-3 sm:px-4 py-2 text-[10px] tk-l"
+                   style={{ background: "rgba(168, 85, 24, 0.1)", color: VENUES.yongyun.color, fontWeight: 700 }}>
+                ■ 應收費用清單
+              </div>
               <div className="grid items-center gap-2 px-3 sm:px-4 py-2 text-[10px] tk-l"
                    style={{ background: VENUES.yongyun.color, color: "#fff",
                             gridTemplateColumns: "32px 1fr 50px 50px 60px 70px" }}>
@@ -2447,7 +2655,7 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
                 <span>姓名</span>
                 <span className="text-center">早</span>
                 <span className="text-center">午</span>
-                <span className="text-center">總次</span>
+                <span className="text-center">應收場</span>
                 <span className="text-right">費用</span>
               </div>
               {paidList.map(s => (
@@ -2465,10 +2673,10 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
                       {s.cls}-{pad(s.num)}
                     </div>
                   </div>
-                  <span className="num text-center" style={{ color: "var(--ink-2)" }}>{s.yyAm}</span>
-                  <span className="num text-center" style={{ color: "var(--ink-2)" }}>{s.yyPm}</span>
+                  <span className="num text-center" style={{ color: "var(--ink-2)" }}>{s.yyAmPaid}</span>
+                  <span className="num text-center" style={{ color: "var(--ink-2)" }}>{s.yyPmPaid}</span>
                   <span className="num text-center font-bold" style={{ color: VENUES.yongyun.color }}>
-                    {s.yyTotal}
+                    {s.yyPaid}
                   </span>
                   <span className="num text-right font-bold" style={{ color: VENUES.yongyun.color }}>
                     ${s.yyFee}
@@ -2477,8 +2685,58 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
               ))}
               <div className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold flex justify-between"
                    style={{ background: VENUES.yongyun.color, color: "#fff" }}>
-                <span>合計</span>
+                <span>應收合計</span>
                 <span>{yyStats.paidPeople} 人 · {yyStats.totalAttendees} 人次 · ${yyStats.totalFee}</span>
+              </div>
+            </>
+          )}
+
+          {/* 個練名單區塊（紫色，獨立） */}
+          {soloList.length > 0 && (
+            <>
+              <div className="px-3 sm:px-4 py-2 mt-2 text-[10px] tk-l flex items-center gap-2"
+                   style={{ background: "rgba(124, 77, 188, 0.12)", color: "#7C4DBC", fontWeight: 700 }}>
+                <span>⭐</span>
+                <span>個練名單（自費，不計入永運費）</span>
+              </div>
+              <div className="grid items-center gap-2 px-3 sm:px-4 py-2 text-[10px] tk-l"
+                   style={{ background: "#7C4DBC", color: "#fff",
+                            gridTemplateColumns: "32px 1fr 50px 50px 60px 70px" }}>
+                <span>序號</span>
+                <span>姓名</span>
+                <span className="text-center">永早</span>
+                <span className="text-center">永午</span>
+                <span className="text-center">個練數</span>
+                <span className="text-right">費用</span>
+              </div>
+              {soloList.map(s => (
+                <div key={s.seq} className="grid items-center gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm"
+                     style={{
+                       gridTemplateColumns: "32px 1fr 50px 50px 60px 70px",
+                       borderBottom: "1px solid rgba(124, 77, 188, 0.15)",
+                       background: "rgba(124, 77, 188, 0.04)",
+                     }}>
+                  <span className="num text-[11px]" style={{ color: "#7C4DBC", opacity: 0.7 }}>
+                    {pad(s.seq)}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="font-medium truncate" style={{ color: "var(--ink)" }}>{s.name}</div>
+                    <div className="num text-[10px]" style={{ color: "#7C4DBC", opacity: 0.7 }}>
+                      {s.cls}-{pad(s.num)}
+                    </div>
+                  </div>
+                  <span className="num text-center" style={{ color: "var(--ink-2)" }}>{s.yyAm}</span>
+                  <span className="num text-center" style={{ color: "var(--ink-2)" }}>{s.yyPm}</span>
+                  <span className="num text-center font-bold" style={{ color: "#7C4DBC" }}>
+                    {s.soloTotal}
+                  </span>
+                  <span className="num text-right font-medium" style={{ color: "#7C4DBC" }}>$0</span>
+                </div>
+              ))}
+              <div className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold flex justify-between"
+                   style={{ background: "#7C4DBC", color: "#fff" }}>
+                <span>個練合計</span>
+                <span>{yyStats.soloPeople} 人 · {yyStats.soloAttendees} 人次（自費）</span>
               </div>
             </>
           )}
@@ -2657,6 +2915,8 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
   const pmAtt = attendance[selectedDate]?.pm || {};
   const amLate = attendance[selectedDate]?.am_late || {};
   const pmLate = attendance[selectedDate]?.pm_late || {};
+  const amSolo = attendance[selectedDate]?.am_solo || {};
+  const pmSolo = attendance[selectedDate]?.pm_solo || {};
   const amNotes = attendance[selectedDate]?.am_notes || {};
   const pmNotes = attendance[selectedDate]?.pm_notes || {};
   const dayNote = attendance[selectedDate]?.notes || "";
@@ -2675,12 +2935,16 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
   const rows = roster.map(p => {
     const amSch = p.sch[dateInfo.amIdx] === 1;
     const pmSch = p.sch[dateInfo.pmIdx] === 1;
+    const dayHasSolo = !!(amSolo[p.seq] || pmSolo[p.seq]);
     return {
       ...p, amSch, pmSch,
       amStatus: computeStatus(amSch, amAtt[p.seq]),
       pmStatus: computeStatus(pmSch, pmAtt[p.seq]),
       amLate: !!amLate[p.seq],
       pmLate: !!pmLate[p.seq],
+      amSolo: !!amSolo[p.seq],
+      pmSolo: !!pmSolo[p.seq],
+      dayHasSolo,
       amNote: amNotes[p.seq] || "",
       pmNote: pmNotes[p.seq] || "",
     };
@@ -2703,6 +2967,11 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
   const latees = rows.filter(r =>
     (r.amLate && (r.amStatus === "on_time" || r.amStatus === "bonus")) ||
     (r.pmLate && (r.pmStatus === "on_time" || r.pmStatus === "bonus"))
+  );
+  // 個練名單：當日有勾任一場個練 + 當天有出席永運
+  const soloees = rows.filter(r => r.dayHasSolo && hasYongyun &&
+    (r.amStatus === "on_time" || r.amStatus === "bonus" ||
+     r.pmStatus === "on_time" || r.pmStatus === "bonus")
   );
   const notedRows = rows.filter(r => r.amNote || r.pmNote);
 
@@ -2893,23 +3162,39 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
           </div>
 
           {/* 永運費用提示橫條（有任一場永運時顯示） */}
-          {hasYongyun && (
-            <div style={{
-              background: VENUES.yongyun.bg, padding: "4px 12px",
-              borderBottom: "1px solid #DDD3BF",
-              fontSize: 10, color: VENUES.yongyun.color, fontWeight: 700,
-              display: "flex", alignItems: "center", gap: 4,
-            }}>
-              <span>💰</span>
-              <span>本日永運場次：</span>
-              {amVenue === "yongyun" && <span>早訓 {amS.on + amS.bn} 人</span>}
-              {amVenue === "yongyun" && pmVenue === "yongyun" && <span style={{ color: "#8B8275" }}>·</span>}
-              {pmVenue === "yongyun" && <span>午訓 {pmS.on + pmS.bn} 人</span>}
-              <span style={{ marginLeft: "auto" }}>
-                每人 ${VENUE_FEE}
-              </span>
-            </div>
-          )}
+          {hasYongyun && (() => {
+            // 計算今日應收人次（扣除整天個練的人）
+            const amPaid = amVenue === "yongyun" ? rows.filter(r =>
+              !r.dayHasSolo && (r.amStatus === "on_time" || r.amStatus === "bonus")
+            ).length : 0;
+            const pmPaid = pmVenue === "yongyun" ? rows.filter(r =>
+              !r.dayHasSolo && (r.pmStatus === "on_time" || r.pmStatus === "bonus")
+            ).length : 0;
+            const totalPaid = amPaid + pmPaid;
+            const totalFee = totalPaid * VENUE_FEE;
+            return (
+              <div style={{
+                background: VENUES.yongyun.bg, padding: "4px 12px",
+                borderBottom: "1px solid #DDD3BF",
+                fontSize: 10, color: VENUES.yongyun.color, fontWeight: 700,
+                display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap",
+              }}>
+                <span>💰</span>
+                <span>本日永運：</span>
+                {amVenue === "yongyun" && <span>早 {amPaid} 人</span>}
+                {amVenue === "yongyun" && pmVenue === "yongyun" && <span style={{ color: "#8B8275" }}>·</span>}
+                {pmVenue === "yongyun" && <span>午 {pmPaid} 人</span>}
+                {soloees.length > 0 && (
+                  <span style={{ color: "#7C4DBC", marginLeft: 4 }}>
+                    （扣除 {soloees.length} 名個練）
+                  </span>
+                )}
+                <span style={{ marginLeft: "auto" }}>
+                  應收 ${totalFee}
+                </span>
+              </div>
+            );
+          })()}
 
           {/* 整日備註橫條（如有） */}
           {dayNote && (
@@ -2971,6 +3256,24 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
                   </span>
                 );
               })}
+            </div>
+          )}
+
+          {/* 個練清單橫條（紫色，當日有勾個練時顯示） */}
+          {soloees.length > 0 && (
+            <div style={{
+              background: "rgba(124, 77, 188, 0.15)", padding: "5px 12px",
+              borderBottom: "1px solid #DDD3BF",
+              fontSize: 10, color: "#7C4DBC", fontWeight: 600,
+              lineHeight: 1.4,
+            }}>
+              <span style={{ letterSpacing: "0.1em", marginRight: 4 }}>⭐ 個練（自費，不計入永運費）：</span>
+              {soloees.map((r, i) => (
+                <span key={r.seq}>
+                  {i > 0 && "、"}
+                  {r.name}
+                </span>
+              ))}
             </div>
           )}
 
