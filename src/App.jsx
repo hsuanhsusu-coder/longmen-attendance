@@ -63,6 +63,24 @@ const pad = (n) => String(n).padStart(2, "0");
 const toDateStr = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const fromDateStr = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
 
+// ============ 場地常數 ============
+const VENUES = {
+  longmen: { id: "longmen", label: "龍門", short: "龍", color: "#1A3D4D", bg: "#E8EEF0", fee: 0 },
+  yongyun: { id: "yongyun", label: "永運", short: "永", color: "#A85518", bg: "#FBE5D2", fee: 50 },
+};
+const VENUE_FEE = 50;
+// 預設場地：週六(dow=6) 永運，其他龍門
+const getDefaultVenue = (dateStr) => {
+  const d = fromDateStr(dateStr);
+  return d.getDay() === 6 ? "yongyun" : "longmen";
+};
+// 取得某天某時段的場地（優先讀 venue 設定，沒設讀預設）
+const getVenue = (attendance, dateStr, period) => {
+  const venueObj = attendance?.[dateStr]?.venue;
+  if (venueObj && venueObj[period]) return venueObj[period];
+  return getDefaultVenue(dateStr);
+};
+
 const getDateInfo = (dateStr) => {
   const date = fromDateStr(dateStr);
   const dow = date.getDay();
@@ -404,7 +422,7 @@ function AttendanceApp({ user }) {
   const exportAll = () => {
     const csvSafe = (s) => `"${(s || "").replace(/"/g, '""')}"`;
     const lines = [
-      ["日期", "星期", "時段", "序號", "班級", "座號", "姓名", "年級", "表定", "實際", "遲到", "備註"].join(",")
+      ["日期", "星期", "時段", "場地", "序號", "班級", "座號", "姓名", "年級", "表定", "實際", "遲到", "備註", "永運費"].join(",")
     ];
     TRAINING_DAYS.forEach((day) => {
       const dayData = attendance[day.dateStr] || {};
@@ -413,26 +431,32 @@ function AttendanceApp({ user }) {
         const slot = dayData[per] || {};
         const lateSlot = dayData[per === "am" ? "am_late" : "pm_late"] || {};
         const noteSlot = dayData[per === "am" ? "am_notes" : "pm_notes"] || {};
+        const venue = getVenue(attendance, day.dateStr, per);
+        const venueLabel = VENUES[venue].label;
+        const isYy = venue === "yongyun";
         roster.forEach((p) => {
           const sch = p.sch[idx] === 1;
           const ac = slot[p.seq];
           const isLate = !!lateSlot[p.seq];
           const note = noteSlot[p.seq] || "";
+          const fee = isYy && ac === "present" ? `$${VENUE_FEE}` : "";
           lines.push([
             day.dateStr, day.info.dayLabel,
             per === "am" ? "早訓" : "午訓",
+            venueLabel,
             p.seq, p.cls, p.num, p.name,
             GRADE_NAMES[p.grade],
             sch ? "出席" : "不出席",
             ac === "present" ? "出席" : ac === "absent" ? "未到" : "未點名",
             isLate ? "是" : "",
             csvSafe(note),
+            fee,
           ].join(","));
         });
       });
       // 整日備註單獨一行
       if (dayData.notes) {
-        lines.push([day.dateStr, day.info.dayLabel, "整日備註", "", "", "", "", "", "", "", "", csvSafe(dayData.notes)].join(","));
+        lines.push([day.dateStr, day.info.dayLabel, "整日備註", "", "", "", "", "", "", "", "", "", csvSafe(dayData.notes), ""].join(","));
       }
     });
     const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
@@ -708,28 +732,45 @@ function MiniCalendar({ selectedDate, onPick, attendance }) {
           const isSelected = ds === selectedDate;
           const isToday = ds === todayStr;
           const hasData = dayHasData(c.d);
+          // 判斷是否有任一場次為永運
+          const isYongyun = !isOff && (
+            getVenue(attendance, ds, "am") === "yongyun" ||
+            getVenue(attendance, ds, "pm") === "yongyun"
+          );
           return (
             <button key={i}
                     onClick={() => !isOff && onPick(ds)}
                     disabled={isOff}
                     className="btn-tactile relative aspect-square rounded-lg flex flex-col items-center justify-center text-sm sm:text-base"
                     style={{
-                      background: isSelected ? "var(--ink)" : isOff ? "transparent" : "var(--panel-2)",
-                      color: isSelected ? "var(--bg)" : isOff ? "var(--mute)" : "var(--ink)",
+                      background: isSelected ? "var(--ink)"
+                        : isOff ? "transparent"
+                        : isYongyun ? VENUES.yongyun.bg
+                        : "var(--panel-2)",
+                      color: isSelected ? "var(--bg)"
+                        : isOff ? "var(--mute)"
+                        : isYongyun ? VENUES.yongyun.color
+                        : "var(--ink)",
                       border: isToday && !isSelected ? "2px solid var(--accent)" : "2px solid transparent",
                       cursor: isOff ? "not-allowed" : "pointer",
                       fontWeight: isSelected ? 700 : 400,
                     }}>
               <span className="num">{c.d}</span>
+              {isYongyun && !isSelected && (
+                <span className="absolute top-0.5 right-0.5 text-[8px] font-bold leading-none"
+                      style={{ color: VENUES.yongyun.color }}>
+                  永
+                </span>
+              )}
               {hasData && !isSelected && (
                 <span className="absolute bottom-1 w-1 h-1 rounded-full"
-                      style={{ background: "var(--green-2)" }} />
+                      style={{ background: isYongyun ? VENUES.yongyun.color : "var(--green-2)" }} />
               )}
             </button>
           );
         })}
       </div>
-      <div className="mt-2 flex items-center gap-3 text-[10px]" style={{ color: "var(--mute)" }}>
+      <div className="mt-2 flex items-center gap-3 text-[10px] flex-wrap" style={{ color: "var(--mute)" }}>
         <span className="flex items-center gap-1">
           <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "var(--ink)" }} />
           已選
@@ -740,7 +781,14 @@ function MiniCalendar({ selectedDate, onPick, attendance }) {
         </span>
         <span className="flex items-center gap-1">
           <span className="w-1 h-1 rounded-full" style={{ background: "var(--green-2)" }} />
-          有點名紀錄
+          有點名
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2.5 h-2.5 rounded-sm flex items-center justify-center text-[7px] font-bold"
+                style={{ background: VENUES.yongyun.bg, color: VENUES.yongyun.color }}>
+            永
+          </span>
+          永運
         </span>
       </div>
     </div>
@@ -764,7 +812,7 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
   const dateInfo = getDateInfo(selectedDate);
   const sessionIdx = period === "am" ? dateInfo.amIdx : dateInfo.pmIdx;
   const periodLabel = period === "am" ? "早訓" : "午訓";
-  const fullLabel = `${dateInfo.dayLabel}${periodLabel}${dateInfo.isSat ? "(永運)" : ""}`;
+  const fullLabel = `${dateInfo.dayLabel}${periodLabel}`;
   const sessionAtt = attendance[selectedDate]?.[period] || {};
   const lateKey = period === "am" ? "am_late" : "pm_late";
   const notesKey = period === "am" ? "am_notes" : "pm_notes";
@@ -905,6 +953,30 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
       },
     });
   };
+
+  // 切換場地（早訓 / 午訓 各自）
+  const setVenue = (newVenueId) => {
+    if (locked) { triggerLockedAlert(); return; }
+    if (!VENUES[newVenueId]) return;
+    const beforeVenue = getVenue(attendance, selectedDate, period);
+    if (beforeVenue === newVenueId) return;
+    setAttendance(prev => {
+      const day = { ...(prev[selectedDate] || {}) };
+      const venueObj = { ...(day.venue || {}) };
+      venueObj[period] = newVenueId;
+      day.venue = venueObj;
+      return { ...prev, [selectedDate]: day };
+    }, {
+      dateStr: selectedDate,
+      logPayload: {
+        target: `attendance/${selectedDate}/venue/${period}`,
+        targetLabel: `${selectedDate} ${period === "am" ? "早訓" : "午訓"} - 場地切換`,
+        before: { venue: beforeVenue },
+        after: { venue: newVenueId },
+      },
+    });
+  };
+  const currentVenue = getVenue(attendance, selectedDate, period);
   const markAllPresent = () => {
     if (locked) { triggerLockedAlert(); return; }
     const beforeSlot = { ...(attendance[selectedDate]?.[period] || {}) };
@@ -954,7 +1026,10 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
   };
   const exportSession = () => {
     const csvSafe = (s) => `"${(s || "").replace(/"/g, '""')}"`;
+    const venueLabel = VENUES[currentVenue].label;
+    const fee = VENUES[currentVenue].fee;
     const lines = [
+      [`場地：${venueLabel}${fee > 0 ? ` (每人 $${fee})` : ""}`].join(","),
       ["序號", "班級", "座號", "姓名", "年級", "表定", "實際", "遲到", "備註"].join(","),
       ...rows.map(r => [
         r.seq, r.cls, r.num, r.name, GRADE_NAMES[r.grade],
@@ -968,7 +1043,7 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
     const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = `點名_${selectedDate}_${fullLabel}.csv`; a.click();
+    a.href = url; a.download = `點名_${selectedDate}_${fullLabel}_${venueLabel}.csv`; a.click();
     URL.revokeObjectURL(url);
   };
 
@@ -1054,9 +1129,11 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
           ].map(p => {
             const active = period === p.k;
             const Ic = p.Ic;
+            const pVenue = getVenue(attendance, selectedDate, p.k);
+            const pVenueObj = VENUES[pVenue];
             return (
               <button key={p.k} onClick={() => setPeriod(p.k)}
-                      className="btn-tactile flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-medium"
+                      className="btn-tactile flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-medium relative"
                       style={{
                         borderColor: active ? "var(--red)" : "var(--line)",
                         background: active ? "var(--red)" : "transparent",
@@ -1064,9 +1141,67 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
                       }}>
                 <Ic size={16} strokeWidth={2.5} />
                 {p.l}
+                <span className="text-[9px] px-1.5 py-0.5 rounded font-bold ml-1"
+                      style={{
+                        background: active ? "rgba(255,255,255,0.25)" : pVenueObj.bg,
+                        color: active ? "#fff" : pVenueObj.color,
+                      }}>
+                  📍{pVenueObj.short}
+                </span>
               </button>
             );
           })}
+        </div>
+      </section>
+
+      {/* 場地切換 */}
+      <section className="rounded-2xl p-4 sm:p-5 border-2"
+               style={{
+                 background: VENUES[currentVenue].bg,
+                 borderColor: VENUES[currentVenue].color,
+               }}>
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div className="text-[10px] sm:text-xs tk-x" style={{ color: VENUES[currentVenue].color, opacity: 0.7 }}>
+            VENUE · {periodLabel}場地
+          </div>
+          {currentVenue === "yongyun" && (
+            <span className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full font-bold"
+                  style={{ background: VENUES.yongyun.color, color: "#fff" }}>
+              💰 每人 ${VENUE_FEE}
+            </span>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {Object.values(VENUES).map(v => {
+            const active = currentVenue === v.id;
+            return (
+              <button key={v.id} onClick={() => setVenue(v.id)} disabled={locked}
+                      className="btn-tactile flex items-center justify-center gap-1.5 py-2.5 rounded-xl border-2 font-medium"
+                      style={{
+                        borderColor: active ? v.color : "var(--line)",
+                        background: active ? v.color : "var(--panel)",
+                        color: active ? "#fff" : "var(--ink-2)",
+                        opacity: locked ? 0.6 : 1,
+                      }}>
+                <span style={{ fontSize: 14 }}>📍</span>
+                <span>{v.label}</span>
+                {v.fee > 0 && (
+                  <span className="text-[10px] px-1 rounded ml-1"
+                        style={{
+                          background: active ? "rgba(255,255,255,0.25)" : "rgba(168, 85, 24, 0.15)",
+                          color: active ? "#fff" : v.color,
+                        }}>
+                    ${v.fee}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <div className="text-[10px] mt-2 text-center" style={{ color: VENUES[currentVenue].color, opacity: 0.7 }}>
+          {currentVenue === "yongyun"
+            ? `本場為永運場次，出席每位隊員加收 $${VENUE_FEE}`
+            : "本場為龍門泳池，無額外費用"}
         </div>
       </section>
 
@@ -1490,20 +1625,29 @@ function DailyView({ selectedDate, setSelectedDate, attendance, setTab, setPerio
 
   const exportDay = () => {
     const csvSafe = (s) => `"${(s || "").replace(/"/g, '""')}"`;
+    const amV = getVenue(attendance, selectedDate, "am");
+    const pmV = getVenue(attendance, selectedDate, "pm");
     const lines = [
-      ["序號","班級","座號","姓名","年級","早訓表定","早訓實際","早訓遲到","早訓備註","午訓表定","午訓實際","午訓遲到","午訓備註"].join(",")
+      [`場地：早訓 ${VENUES[amV].label}${VENUES[amV].fee > 0 ? `($${VENUES[amV].fee})` : ""} · 午訓 ${VENUES[pmV].label}${VENUES[pmV].fee > 0 ? `($${VENUES[pmV].fee})` : ""}`].join(","),
+      ["序號","班級","座號","姓名","年級","早訓表定","早訓實際","早訓遲到","早訓備註","午訓表定","午訓實際","午訓遲到","午訓備註","應收費用"].join(",")
     ];
-    rows.forEach(r => lines.push([
-      r.seq, r.cls, r.num, r.name, GRADE_NAMES[r.grade],
-      r.amSch ? "出席" : "不出席",
-      r.amActual === "present" ? "出席" : r.amActual === "absent" ? "未到" : "未點名",
-      r.amLate ? "是" : "",
-      csvSafe(r.amNote),
-      r.pmSch ? "出席" : "不出席",
-      r.pmActual === "present" ? "出席" : r.pmActual === "absent" ? "未到" : "未點名",
-      r.pmLate ? "是" : "",
-      csvSafe(r.pmNote),
-    ].join(",")));
+    rows.forEach(r => {
+      let dayFee = 0;
+      if (amV === "yongyun" && (r.amActual === "present")) dayFee += VENUE_FEE;
+      if (pmV === "yongyun" && (r.pmActual === "present")) dayFee += VENUE_FEE;
+      lines.push([
+        r.seq, r.cls, r.num, r.name, GRADE_NAMES[r.grade],
+        r.amSch ? "出席" : "不出席",
+        r.amActual === "present" ? "出席" : r.amActual === "absent" ? "未到" : "未點名",
+        r.amLate ? "是" : "",
+        csvSafe(r.amNote),
+        r.pmSch ? "出席" : "不出席",
+        r.pmActual === "present" ? "出席" : r.pmActual === "absent" ? "未到" : "未點名",
+        r.pmLate ? "是" : "",
+        csvSafe(r.pmNote),
+        dayFee > 0 ? `$${dayFee}` : "",
+      ].join(","));
+    });
     if (dayNote) {
       lines.push("");
       lines.push(`整日備註,${csvSafe(dayNote)}`);
@@ -1599,8 +1743,12 @@ function DailyView({ selectedDate, setSelectedDate, attendance, setTab, setPerio
       </section>
 
       <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <DaySessionSummary label="早訓" Ic={Sun} stats={amStats} onClick={() => goCallSession("am")} />
-        <DaySessionSummary label="午訓" Ic={Moon} stats={pmStats} onClick={() => goCallSession("pm")} />
+        <DaySessionSummary label="早訓" Ic={Sun} stats={amStats}
+                           venue={getVenue(attendance, selectedDate, "am")}
+                           onClick={() => goCallSession("am")} />
+        <DaySessionSummary label="午訓" Ic={Moon} stats={pmStats}
+                           venue={getVenue(attendance, selectedDate, "pm")}
+                           onClick={() => goCallSession("pm")} />
       </section>
 
       {/* 整日備註展示（如果有） */}
@@ -1701,8 +1849,9 @@ function DailyTableHeader() {
   );
 }
 
-function DaySessionSummary({ label, Ic, stats, onClick }) {
+function DaySessionSummary({ label, Ic, stats, onClick, venue }) {
   const rate = stats.sch === 0 ? 0 : Math.round(stats.on / stats.sch * 100);
+  const venueObj = venue ? VENUES[venue] : null;
   return (
     <button onClick={onClick}
             className="btn-tactile rounded-2xl p-4 sm:p-5 border-2 text-left"
@@ -1711,6 +1860,13 @@ function DaySessionSummary({ label, Ic, stats, onClick }) {
         <div className="flex items-center gap-2">
           <Ic size={18} strokeWidth={2.5} style={{ color: "var(--ink-2)" }} />
           <span className="display-cn text-lg" style={{ color: "var(--ink)" }}>{label}</span>
+          {venueObj && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded font-bold"
+                  style={{ background: venueObj.bg, color: venueObj.color }}>
+              📍{venueObj.label}
+              {venueObj.fee > 0 && <span className="ml-1">${venueObj.fee}</span>}
+            </span>
+          )}
         </div>
         <span className="text-[10px] tk-l" style={{ color: "var(--mute)" }}>點此前往點名 →</span>
       </div>
@@ -1816,17 +1972,28 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS 
   const { roster } = useRoster();
   const personStats = useMemo(() => roster.map(p => {
     let scheduled = 0, present = 0, absent = 0, bonus = 0, pending = 0, late = 0;
+    let yyAm = 0, yyPm = 0; // 永運場次出席（早/午）
     const matrix = TRAINING_DAYS.map(day => {
       const dayData = attendance[day.dateStr] || {};
+      const amVenue = getVenue(attendance, day.dateStr, "am");
+      const pmVenue = getVenue(attendance, day.dateStr, "pm");
       const am = (() => {
         const sch = p.sch[day.info.amIdx] === 1;
         const ac = dayData.am?.[p.seq];
         const isLate = !!dayData.am_late?.[p.seq];
         if (sch) scheduled++;
-        if (sch && ac === "present") { present++; if (isLate) late++; return "on_time"; }
+        if (sch && ac === "present") {
+          present++; if (isLate) late++;
+          if (amVenue === "yongyun") yyAm++;
+          return "on_time";
+        }
         if (sch && ac === "absent") { absent++; return "no_show"; }
         if (sch && !ac) { pending++; return "pending"; }
-        if (!sch && ac === "present") { bonus++; if (isLate) late++; return "bonus"; }
+        if (!sch && ac === "present") {
+          bonus++; if (isLate) late++;
+          if (amVenue === "yongyun") yyAm++;
+          return "bonus";
+        }
         if (!sch && ac === "absent") return "confirmed_excused";
         return "off";
       })();
@@ -1835,18 +2002,41 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS 
         const ac = dayData.pm?.[p.seq];
         const isLate = !!dayData.pm_late?.[p.seq];
         if (sch) scheduled++;
-        if (sch && ac === "present") { present++; if (isLate) late++; return "on_time"; }
+        if (sch && ac === "present") {
+          present++; if (isLate) late++;
+          if (pmVenue === "yongyun") yyPm++;
+          return "on_time";
+        }
         if (sch && ac === "absent") { absent++; return "no_show"; }
         if (sch && !ac) { pending++; return "pending"; }
-        if (!sch && ac === "present") { bonus++; if (isLate) late++; return "bonus"; }
+        if (!sch && ac === "present") {
+          bonus++; if (isLate) late++;
+          if (pmVenue === "yongyun") yyPm++;
+          return "bonus";
+        }
         if (!sch && ac === "absent") return "confirmed_excused";
         return "off";
       })();
       return { day, am, pm };
     });
     const rate = scheduled === 0 ? 0 : present / scheduled;
-    return { ...p, scheduled, present, absent, bonus, pending, late, rate, matrix };
+    const yyTotal = yyAm + yyPm;
+    const yyFee = yyTotal * VENUE_FEE;
+    return { ...p, scheduled, present, absent, bonus, pending, late, rate, matrix, yyAm, yyPm, yyTotal, yyFee };
   }), [attendance, roster, TRAINING_DAYS]);
+
+  // 永運場次統計（共幾次永運訓練、總費用）
+  const yyStats = useMemo(() => {
+    let yyAmSessions = 0, yyPmSessions = 0;
+    TRAINING_DAYS.forEach(day => {
+      if (getVenue(attendance, day.dateStr, "am") === "yongyun") yyAmSessions++;
+      if (getVenue(attendance, day.dateStr, "pm") === "yongyun") yyPmSessions++;
+    });
+    const totalFee = personStats.reduce((acc, s) => acc + s.yyFee, 0);
+    const totalAttendees = personStats.reduce((acc, s) => acc + s.yyTotal, 0);
+    const paidPeople = personStats.filter(s => s.yyTotal > 0).length;
+    return { yyAmSessions, yyPmSessions, totalFee, totalAttendees, paidPeople };
+  }, [personStats, attendance, TRAINING_DAYS]);
 
   const team = personStats.reduce((acc, s) => ({
     scheduled: acc.scheduled + s.scheduled,
@@ -1916,6 +2106,15 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS 
                    emptyText="本月尚無缺席紀錄" />
       </section>
 
+      {/* 永運費用統計 */}
+      <YongyunFeeSection
+        Y={Y} M={M}
+        yyStats={yyStats}
+        personStats={personStats}
+        TRAINING_DAYS={TRAINING_DAYS}
+        attendance={attendance}
+      />
+
       <section className="rounded-xl p-3 sm:p-4 border"
                style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
         <div className="flex items-center gap-3 flex-wrap text-[11px] sm:text-xs">
@@ -1962,6 +2161,141 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS 
         ))}
       </section>
     </div>
+  );
+}
+
+function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendance }) {
+  const [expanded, setExpanded] = useState(false);
+  const paidList = useMemo(() =>
+    [...personStats].filter(s => s.yyTotal > 0).sort((a, b) => b.yyFee - a.yyFee || a.seq - b.seq),
+    [personStats]);
+
+  const exportFee = () => {
+    const csvSafe = (s) => `"${(s || "").replace(/"/g, '""')}"`;
+    const lines = [
+      [`${Y} 年 ${M + 1} 月 永運費用統計`].join(","),
+      [`本月永運場次：早訓 ${yyStats.yyAmSessions} 場 + 午訓 ${yyStats.yyPmSessions} 場 = 共 ${yyStats.yyAmSessions + yyStats.yyPmSessions} 場`].join(","),
+      [`每場次費用：$${VENUE_FEE} / 人`].join(","),
+      "",
+      ["序號", "班級", "座號", "姓名", "年級", "早訓出席次數", "午訓出席次數", "永運總出席", "應收費用"].join(","),
+    ];
+    paidList.forEach(s => {
+      lines.push([
+        s.seq, s.cls, s.num, s.name, GRADE_NAMES[s.grade],
+        s.yyAm, s.yyPm, s.yyTotal, `$${s.yyFee}`,
+      ].join(","));
+    });
+    lines.push("");
+    lines.push([`應收人數：${yyStats.paidPeople} 人`].join(","));
+    lines.push([`總人次：${yyStats.totalAttendees} 人次`].join(","));
+    lines.push([`總費用：$${yyStats.totalFee}`].join(","));
+    const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `永運費用_${Y}年${M + 1}月.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  if (yyStats.yyAmSessions === 0 && yyStats.yyPmSessions === 0) {
+    return (
+      <section className="rounded-xl p-3 sm:p-4 border"
+               style={{ background: VENUES.yongyun.bg, borderColor: VENUES.yongyun.color, opacity: 0.85 }}>
+        <div className="flex items-center gap-2 text-sm" style={{ color: VENUES.yongyun.color }}>
+          <span>📍</span>
+          <span className="font-medium">{Y} 年 {M + 1} 月本月尚無永運場次</span>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-2xl border-2 overflow-hidden"
+             style={{ background: VENUES.yongyun.bg, borderColor: VENUES.yongyun.color }}>
+      <div className="p-3 sm:p-4 flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <div className="text-[10px] tk-l mb-1" style={{ color: VENUES.yongyun.color, opacity: 0.7 }}>
+            YONGYUN FEE · 永運費用統計
+          </div>
+          <div className="display-cn text-lg sm:text-xl font-bold flex items-center gap-2"
+               style={{ color: VENUES.yongyun.color }}>
+            <span>💰</span>
+            <span>{Y} 年 {M + 1} 月</span>
+            <span className="num text-2xl sm:text-3xl">${yyStats.totalFee}</span>
+          </div>
+          <div className="text-[11px] sm:text-xs mt-0.5" style={{ color: VENUES.yongyun.color, opacity: 0.8 }}>
+            {yyStats.paidPeople} 人 · {yyStats.totalAttendees} 人次 ·
+            早訓 {yyStats.yyAmSessions} 場 + 午訓 {yyStats.yyPmSessions} 場
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => setExpanded(e => !e)}
+                  className="btn-tactile flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium border-2"
+                  style={{ borderColor: VENUES.yongyun.color, color: VENUES.yongyun.color, background: "rgba(255,255,255,0.5)" }}>
+            <span>{expanded ? "▾" : "▸"}</span>
+            {expanded ? "收起明細" : "展開明細"}
+          </button>
+          <button onClick={exportFee}
+                  className="btn-tactile flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium"
+                  style={{ background: VENUES.yongyun.color, color: "#fff" }}>
+            <Download size={12} strokeWidth={2.5} />
+            匯出 CSV
+          </button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div style={{ background: "rgba(255,255,255,0.6)", borderTop: `1px solid ${VENUES.yongyun.color}` }}>
+          {paidList.length === 0 ? (
+            <div className="p-4 text-center text-sm" style={{ color: VENUES.yongyun.color }}>
+              尚無人出席永運場次
+            </div>
+          ) : (
+            <>
+              <div className="grid items-center gap-2 px-3 sm:px-4 py-2 text-[10px] tk-l"
+                   style={{ background: VENUES.yongyun.color, color: "#fff",
+                            gridTemplateColumns: "32px 1fr 50px 50px 60px 70px" }}>
+                <span>序號</span>
+                <span>姓名</span>
+                <span className="text-center">早</span>
+                <span className="text-center">午</span>
+                <span className="text-center">總次</span>
+                <span className="text-right">費用</span>
+              </div>
+              {paidList.map(s => (
+                <div key={s.seq} className="grid items-center gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm"
+                     style={{
+                       gridTemplateColumns: "32px 1fr 50px 50px 60px 70px",
+                       borderBottom: "1px solid rgba(168, 85, 24, 0.15)",
+                     }}>
+                  <span className="num text-[11px]" style={{ color: VENUES.yongyun.color, opacity: 0.7 }}>
+                    {pad(s.seq)}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="font-medium truncate" style={{ color: "var(--ink)" }}>{s.name}</div>
+                    <div className="num text-[10px]" style={{ color: VENUES.yongyun.color, opacity: 0.7 }}>
+                      {s.cls}-{pad(s.num)}
+                    </div>
+                  </div>
+                  <span className="num text-center" style={{ color: "var(--ink-2)" }}>{s.yyAm}</span>
+                  <span className="num text-center" style={{ color: "var(--ink-2)" }}>{s.yyPm}</span>
+                  <span className="num text-center font-bold" style={{ color: VENUES.yongyun.color }}>
+                    {s.yyTotal}
+                  </span>
+                  <span className="num text-right font-bold" style={{ color: VENUES.yongyun.color }}>
+                    ${s.yyFee}
+                  </span>
+                </div>
+              ))}
+              <div className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold flex justify-between"
+                   style={{ background: VENUES.yongyun.color, color: "#fff" }}>
+                <span>合計</span>
+                <span>{yyStats.paidPeople} 人 · {yyStats.totalAttendees} 人次 · ${yyStats.totalFee}</span>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -2137,6 +2471,9 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
   const amNotes = attendance[selectedDate]?.am_notes || {};
   const pmNotes = attendance[selectedDate]?.pm_notes || {};
   const dayNote = attendance[selectedDate]?.notes || "";
+  const amVenue = getVenue(attendance, selectedDate, "am");
+  const pmVenue = getVenue(attendance, selectedDate, "pm");
+  const hasYongyun = amVenue === "yongyun" || pmVenue === "yongyun";
 
   const computeStatus = (sch, actual) => {
     if (sch && actual === "present") return "on_time";
@@ -2340,6 +2677,10 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
               {amS.pn > 0 && (
                 <span className="num" style={{ color: "#B8860B", fontWeight: 700 }}>待{amS.pn}</span>
               )}
+              <span style={{
+                fontSize: 9, fontWeight: 700, padding: "0 3px", borderRadius: 2,
+                background: VENUES[amVenue].bg, color: VENUES[amVenue].color, marginLeft: 2,
+              }}>📍{VENUES[amVenue].label}</span>
             </div>
             <div className="flex items-center gap-1">
               <Moon size={12} strokeWidth={2.5} style={{ color: "#2E2820" }} />
@@ -2355,8 +2696,31 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
               {pmS.pn > 0 && (
                 <span className="num" style={{ color: "#B8860B", fontWeight: 700 }}>待{pmS.pn}</span>
               )}
+              <span style={{
+                fontSize: 9, fontWeight: 700, padding: "0 3px", borderRadius: 2,
+                background: VENUES[pmVenue].bg, color: VENUES[pmVenue].color, marginLeft: 2,
+              }}>📍{VENUES[pmVenue].label}</span>
             </div>
           </div>
+
+          {/* 永運費用提示橫條（有任一場永運時顯示） */}
+          {hasYongyun && (
+            <div style={{
+              background: VENUES.yongyun.bg, padding: "4px 12px",
+              borderBottom: "1px solid #DDD3BF",
+              fontSize: 10, color: VENUES.yongyun.color, fontWeight: 700,
+              display: "flex", alignItems: "center", gap: 4,
+            }}>
+              <span>💰</span>
+              <span>本日永運場次：</span>
+              {amVenue === "yongyun" && <span>早訓 {amS.on + amS.bn} 人</span>}
+              {amVenue === "yongyun" && pmVenue === "yongyun" && <span style={{ color: "#8B8275" }}>·</span>}
+              {pmVenue === "yongyun" && <span>午訓 {pmS.on + pmS.bn} 人</span>}
+              <span style={{ marginLeft: "auto" }}>
+                每人 ${VENUE_FEE}
+              </span>
+            </div>
+          )}
 
           {/* 整日備註橫條（如有） */}
           {dayNote && (
