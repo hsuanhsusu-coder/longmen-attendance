@@ -68,18 +68,403 @@ const fromDateStr = (s) => { const [y, m, d] = s.split("-").map(Number); return 
 const VENUES = {
   longmen: { id: "longmen", label: "龍門", short: "龍", color: "#1A3D4D", bg: "#E8EEF0", fee: 0 },
   yongyun: { id: "yongyun", label: "永運", short: "永", color: "#A85518", bg: "#FBE5D2", fee: 50 },
+  closed:  { id: "closed",  label: "停練", short: "停", color: "#6F6A5C", bg: "#E8E5DD", fee: 0 },
 };
 const VENUE_FEE = 50;
-// 預設場地：週六(dow=6) 永運，其他龍門
-const getDefaultVenue = (dateStr) => {
+// 場地切換時可選的場地（不含 closed，停練不能手動點選，只能由行事曆/系統設定）
+const SELECTABLE_VENUES = ["longmen", "yongyun"];
+
+// Excel 行事曆預設值（從 龍門泳隊下學期隊費 v3 自動連動版 解析而來）
+// 範圍：2025-09-01 ~ 2026-08-31（一整個學年）
+// 結構：{ am: 'longmen'|'yongyun'|'closed', pm: ..., note?: '...' }
+const VENUE_CALENDAR = {
+  "2025-09-01": { am: "longmen", pm: "yongyun" },
+  "2025-09-02": { am: "closed", pm: "yongyun", note: "歲修" },
+  "2025-09-03": { am: "closed", pm: "yongyun", note: "歲修" },
+  "2025-09-04": { am: "closed", pm: "closed", note: "總統盃" },
+  "2025-09-05": { am: "closed", pm: "closed", note: "總統盃" },
+  "2025-09-06": { am: "closed", pm: "closed", note: "總統盃" },
+  "2025-09-07": { am: "closed", pm: "closed", note: "總統盃" },
+  "2025-09-08": { am: "closed", pm: "closed", note: "總統盃" },
+  "2025-09-09": { am: "closed", pm: "closed", note: "總統盃" },
+  "2025-09-10": { am: "longmen", pm: "longmen" },
+  "2025-09-11": { am: "longmen", pm: "longmen" },
+  "2025-09-12": { am: "closed", pm: "longmen" },
+  "2025-09-13": { am: "yongyun", pm: "yongyun" },
+  "2025-09-14": { am: "closed", pm: "closed" },
+  "2025-09-15": { am: "longmen", pm: "longmen" },
+  "2025-09-16": { am: "longmen", pm: "longmen" },
+  "2025-09-17": { am: "longmen", pm: "longmen" },
+  "2025-09-18": { am: "longmen", pm: "longmen" },
+  "2025-09-19": { am: "longmen", pm: "longmen" },
+  "2025-09-20": { am: "yongyun", pm: "yongyun" },
+  "2025-09-21": { am: "closed", pm: "closed" },
+  "2025-09-22": { am: "longmen", pm: "longmen" },
+  "2025-09-23": { am: "longmen", pm: "closed" },
+  "2025-09-24": { am: "longmen", pm: "longmen" },
+  "2025-09-25": { am: "longmen", pm: "longmen" },
+  "2025-09-26": { am: "closed", pm: "closed", note: "北區B" },
+  "2025-09-27": { am: "closed", pm: "closed", note: "北區B" },
+  "2025-09-28": { am: "closed", pm: "closed", note: "北區B" },
+  "2025-09-29": { am: "closed", pm: "closed" },
+  "2025-09-30": { am: "longmen", pm: "longmen" },
+  "2025-10-01": { am: "longmen", pm: "longmen" },
+  "2025-10-02": { am: "longmen", pm: "longmen" },
+  "2025-10-03": { am: "longmen", pm: "longmen" },
+  "2025-10-04": { am: "yongyun", pm: "yongyun" },
+  "2025-10-05": { am: "closed", pm: "closed" },
+  "2025-10-06": { am: "closed", pm: "closed" },
+  "2025-10-07": { am: "longmen", pm: "longmen" },
+  "2025-10-08": { am: "longmen", pm: "longmen" },
+  "2025-10-09": { am: "longmen", pm: "longmen" },
+  "2025-10-10": { am: "yongyun", pm: "yongyun" },
+  "2025-10-11": { am: "yongyun", pm: "yongyun" },
+  "2025-10-12": { am: "closed", pm: "closed" },
+  "2025-10-13": { am: "longmen", pm: "closed" },
+  "2025-10-14": { am: "closed", pm: "closed", note: "月考I" },
+  "2025-10-15": { am: "closed", pm: "longmen", note: "月考I" },
+  "2025-10-16": { am: "longmen", pm: "longmen" },
+  "2025-10-17": { am: "longmen", pm: "longmen" },
+  "2025-10-18": { am: "yongyun", pm: "yongyun" },
+  "2025-10-19": { am: "closed", pm: "closed" },
+  "2025-10-20": { am: "longmen", pm: "longmen" },
+  "2025-10-21": { am: "longmen", pm: "longmen" },
+  "2025-10-22": { am: "longmen", pm: "longmen" },
+  "2025-10-23": { am: "longmen", pm: "longmen" },
+  "2025-10-24": { am: "yongyun", pm: "yongyun" },
+  "2025-10-25": { am: "closed", pm: "closed", note: "幼獅盃" },
+  "2025-10-26": { am: "closed", pm: "closed" },
+  "2025-10-27": { am: "longmen", pm: "longmen" },
+  "2025-10-28": { am: "longmen", pm: "longmen" },
+  "2025-10-29": { am: "longmen", pm: "longmen" },
+  "2025-10-30": { am: "longmen", pm: "longmen" },
+  "2025-10-31": { am: "longmen", pm: "longmen" },
+  "2025-11-01": { am: "yongyun", pm: "yongyun" },
+  "2025-11-02": { am: "closed", pm: "closed", note: "中正盃" },
+  "2025-11-03": { am: "longmen", pm: "longmen" },
+  "2025-11-04": { am: "longmen", pm: "longmen" },
+  "2025-11-05": { am: "longmen", pm: "longmen" },
+  "2025-11-06": { am: "longmen", pm: "longmen" },
+  "2025-11-07": { am: "longmen", pm: "closed" },
+  "2025-11-08": { am: "yongyun", pm: "closed" },
+  "2025-11-09": { am: "closed", pm: "closed" },
+  "2025-11-10": { am: "longmen", pm: "longmen" },
+  "2025-11-11": { am: "longmen", pm: "longmen" },
+  "2025-11-12": { am: "longmen", pm: "longmen" },
+  "2025-11-13": { am: "longmen", pm: "longmen" },
+  "2025-11-14": { am: "longmen", pm: "longmen" },
+  "2025-11-15": { am: "closed", pm: "closed", note: "校慶" },
+  "2025-11-16": { am: "closed", pm: "closed" },
+  "2025-11-17": { am: "longmen", pm: "closed" },
+  "2025-11-18": { am: "longmen", pm: "longmen" },
+  "2025-11-19": { am: "longmen", pm: "longmen" },
+  "2025-11-20": { am: "longmen", pm: "longmen" },
+  "2025-11-21": { am: "longmen", pm: "longmen" },
+  "2025-11-22": { am: "yongyun", pm: "yongyun" },
+  "2025-11-23": { am: "closed", pm: "closed" },
+  "2025-11-24": { am: "longmen", pm: "longmen" },
+  "2025-11-25": { am: "longmen", pm: "longmen" },
+  "2025-11-26": { am: "longmen", pm: "longmen" },
+  "2025-11-27": { am: "longmen", pm: "longmen" },
+  "2025-11-28": { am: "longmen", pm: "longmen" },
+  "2025-11-29": { am: "yongyun", pm: "yongyun" },
+  "2025-11-30": { am: "closed", pm: "closed" },
+  "2025-12-01": { am: "longmen", pm: "closed" },
+  "2025-12-02": { am: "closed", pm: "closed", note: "月考II" },
+  "2025-12-03": { am: "closed", pm: "longmen", note: "月考II" },
+  "2025-12-04": { am: "longmen", pm: "longmen" },
+  "2025-12-05": { am: "longmen", pm: "longmen" },
+  "2025-12-06": { am: "yongyun", pm: "yongyun" },
+  "2025-12-07": { am: "yongyun", pm: "closed" },
+  "2025-12-08": { am: "longmen", pm: "longmen" },
+  "2025-12-09": { am: "longmen", pm: "longmen" },
+  "2025-12-10": { am: "longmen", pm: "longmen" },
+  "2025-12-11": { am: "longmen", pm: "longmen" },
+  "2025-12-12": { am: "longmen", pm: "longmen" },
+  "2025-12-13": { am: "yongyun", pm: "yongyun" },
+  "2025-12-14": { am: "yongyun", pm: "closed" },
+  "2025-12-15": { am: "longmen", pm: "longmen" },
+  "2025-12-16": { am: "longmen", pm: "longmen" },
+  "2025-12-17": { am: "longmen", pm: "longmen" },
+  "2025-12-18": { am: "longmen", pm: "longmen" },
+  "2025-12-19": { am: "longmen", pm: "longmen" },
+  "2025-12-20": { am: "yongyun", pm: "yongyun" },
+  "2025-12-21": { am: "yongyun", pm: "closed" },
+  "2025-12-22": { am: "longmen", pm: "longmen" },
+  "2025-12-23": { am: "longmen", pm: "longmen" },
+  "2025-12-24": { am: "longmen", pm: "longmen" },
+  "2025-12-25": { am: "yongyun", pm: "yongyun" },
+  "2025-12-26": { am: "longmen", pm: "longmen" },
+  "2025-12-27": { am: "yongyun", pm: "yongyun" },
+  "2025-12-28": { am: "yongyun", pm: "closed" },
+  "2025-12-29": { am: "longmen", pm: "longmen" },
+  "2025-12-30": { am: "longmen", pm: "longmen" },
+  "2025-12-31": { am: "longmen", pm: "longmen" },
+  "2026-01-01": { am: "yongyun", pm: "yongyun" },
+  "2026-01-02": { am: "longmen", pm: "closed" },
+  "2026-01-03": { am: "closed", pm: "closed", note: "市中運" },
+  "2026-01-04": { am: "closed", pm: "closed", note: "市中運" },
+  "2026-01-05": { am: "closed", pm: "closed", note: "市中運" },
+  "2026-01-06": { am: "closed", pm: "closed" },
+  "2026-01-07": { am: "longmen", pm: "longmen" },
+  "2026-01-08": { am: "longmen", pm: "longmen" },
+  "2026-01-09": { am: "longmen", pm: "longmen" },
+  "2026-01-10": { am: "yongyun", pm: "yongyun" },
+  "2026-01-11": { am: "closed", pm: "closed" },
+  "2026-01-12": { am: "longmen", pm: "longmen" },
+  "2026-01-13": { am: "longmen", pm: "longmen" },
+  "2026-01-14": { am: "longmen", pm: "longmen" },
+  "2026-01-15": { am: "longmen", pm: "closed" },
+  "2026-01-16": { am: "closed", pm: "closed", note: "月考III" },
+  "2026-01-17": { am: "closed", pm: "closed" },
+  "2026-01-18": { am: "closed", pm: "closed" },
+  "2026-01-19": { am: "closed", pm: "longmen", note: "月考III" },
+  "2026-01-20": { am: "longmen", pm: "longmen" },
+  "2026-01-21": { am: "longmen", pm: "longmen" },
+  "2026-01-22": { am: "longmen", pm: "longmen" },
+  "2026-01-23": { am: "longmen", pm: "longmen" },
+  "2026-01-24": { am: "yongyun", pm: "yongyun" },
+  "2026-01-25": { am: "closed", pm: "closed" },
+  "2026-01-26": { am: "closed", pm: "closed", note: "北區B" },
+  "2026-01-27": { am: "closed", pm: "closed", note: "北區B" },
+  "2026-01-28": { am: "closed", pm: "closed", note: "北區B" },
+  "2026-01-29": { am: "longmen", pm: "yongyun" },
+  "2026-01-30": { am: "longmen", pm: "yongyun" },
+  "2026-01-31": { am: "yongyun", pm: "yongyun" },
+  "2026-02-01": { am: "closed", pm: "closed" },
+  "2026-02-02": { am: "longmen", pm: "yongyun" },
+  "2026-02-03": { am: "longmen", pm: "yongyun" },
+  "2026-02-04": { am: "longmen", pm: "yongyun" },
+  "2026-02-05": { am: "yongyun", pm: "yongyun" },
+  "2026-02-06": { am: "yongyun", pm: "yongyun" },
+  "2026-02-07": { am: "yongyun", pm: "yongyun" },
+  "2026-02-08": { am: "closed", pm: "closed" },
+  "2026-02-09": { am: "yongyun", pm: "yongyun" },
+  "2026-02-10": { am: "yongyun", pm: "yongyun" },
+  "2026-02-11": { am: "yongyun", pm: "yongyun" },
+  "2026-02-12": { am: "yongyun", pm: "yongyun" },
+  "2026-02-13": { am: "yongyun", pm: "yongyun" },
+  "2026-02-14": { am: "yongyun", pm: "yongyun" },
+  "2026-02-15": { am: "closed", pm: "closed" },
+  "2026-02-16": { am: "closed", pm: "closed", note: "除夕" },
+  "2026-02-17": { am: "closed", pm: "closed", note: "初一" },
+  "2026-02-18": { am: "closed", pm: "closed", note: "初二" },
+  "2026-02-19": { am: "closed", pm: "closed", note: "初三" },
+  "2026-02-20": { am: "yongyun", pm: "closed" },
+  "2026-02-21": { am: "yongyun", pm: "closed" },
+  "2026-02-22": { am: "closed", pm: "closed" },
+  "2026-02-23": { am: "longmen", pm: "longmen" },
+  "2026-02-24": { am: "longmen", pm: "longmen" },
+  "2026-02-25": { am: "longmen", pm: "longmen" },
+  "2026-02-26": { am: "longmen", pm: "longmen" },
+  "2026-02-27": { am: "yongyun", pm: "yongyun" },
+  "2026-02-28": { am: "yongyun", pm: "yongyun" },
+  "2026-03-01": { am: "closed", pm: "closed" },
+  "2026-03-02": { am: "longmen", pm: "longmen" },
+  "2026-03-03": { am: "longmen", pm: "longmen" },
+  "2026-03-04": { am: "longmen", pm: "longmen" },
+  "2026-03-05": { am: "longmen", pm: "longmen" },
+  "2026-03-06": { am: "longmen", pm: "longmen" },
+  "2026-03-07": { am: "yongyun", pm: "yongyun" },
+  "2026-03-08": { am: "closed", pm: "closed" },
+  "2026-03-09": { am: "longmen", pm: "closed" },
+  "2026-03-10": { am: "longmen", pm: "longmen" },
+  "2026-03-11": { am: "longmen", pm: "longmen" },
+  "2026-03-12": { am: "closed", pm: "longmen" },
+  "2026-03-13": { am: "closed", pm: "longmen" },
+  "2026-03-14": { am: "yongyun", pm: "yongyun" },
+  "2026-03-15": { am: "closed", pm: "closed" },
+  "2026-03-16": { am: "longmen", pm: "longmen" },
+  "2026-03-17": { am: "longmen", pm: "longmen" },
+  "2026-03-18": { am: "longmen", pm: "longmen" },
+  "2026-03-19": { am: "longmen", pm: "longmen" },
+  "2026-03-20": { am: "longmen", pm: "closed" },
+  "2026-03-21": { am: "yongyun", pm: "closed" },
+  "2026-03-22": { am: "yongyun", pm: "closed" },
+  "2026-03-23": { am: "longmen", pm: "longmen" },
+  "2026-03-24": { am: "longmen", pm: "longmen" },
+  "2026-03-25": { am: "longmen", pm: "longmen" },
+  "2026-03-26": { am: "longmen", pm: "longmen" },
+  "2026-03-27": { am: "longmen", pm: "longmen" },
+  "2026-03-28": { am: "closed", pm: "closed" },
+  "2026-03-29": { am: "closed", pm: "closed", note: "青年盃" },
+  "2026-03-30": { am: "longmen", pm: "closed" },
+  "2026-03-31": { am: "closed", pm: "closed", note: "月考I" },
+  "2026-04-01": { am: "closed", pm: "longmen", note: "月考I" },
+  "2026-04-02": { am: "longmen", pm: "longmen" },
+  "2026-04-03": { am: "yongyun", pm: "yongyun" },
+  "2026-04-04": { am: "yongyun", pm: "yongyun", note: "兒童節" },
+  "2026-04-05": { am: "yongyun", pm: "closed", note: "清明節" },
+  "2026-04-06": { am: "yongyun", pm: "yongyun" },
+  "2026-04-07": { am: "longmen", pm: "longmen" },
+  "2026-04-08": { am: "longmen", pm: "longmen" },
+  "2026-04-09": { am: "longmen", pm: "longmen" },
+  "2026-04-10": { am: "longmen", pm: "longmen" },
+  "2026-04-11": { am: "yongyun", pm: "yongyun" },
+  "2026-04-12": { am: "yongyun", pm: "closed" },
+  "2026-04-13": { am: "longmen", pm: "longmen" },
+  "2026-04-14": { am: "longmen", pm: "longmen" },
+  "2026-04-15": { am: "longmen", pm: "longmen" },
+  "2026-04-16": { am: "longmen", pm: "longmen" },
+  "2026-04-17": { am: "closed", pm: "closed" },
+  "2026-04-18": { am: "closed", pm: "closed", note: "全中運" },
+  "2026-04-19": { am: "closed", pm: "closed", note: "全中運" },
+  "2026-04-20": { am: "closed", pm: "closed", note: "全中運" },
+  "2026-04-21": { am: "closed", pm: "closed", note: "全中運" },
+  "2026-04-22": { am: "closed", pm: "closed", note: "全中運" },
+  "2026-04-23": { am: "closed", pm: "longmen" },
+  "2026-04-24": { am: "longmen", pm: "closed" },
+  "2026-04-25": { am: "yongyun", pm: "yongyun" },
+  "2026-04-26": { am: "closed", pm: "closed" },
+  "2026-04-27": { am: "longmen", pm: "longmen" },
+  "2026-04-28": { am: "longmen", pm: "longmen" },
+  "2026-04-29": { am: "longmen", pm: "longmen" },
+  "2026-04-30": { am: "longmen", pm: "longmen" },
+  "2026-05-01": { am: "yongyun", pm: "yongyun", note: "勞動節" },
+  "2026-05-02": { am: "yongyun", pm: "yongyun" },
+  "2026-05-03": { am: "closed", pm: "closed" },
+  "2026-05-04": { am: "longmen", pm: "longmen" },
+  "2026-05-05": { am: "longmen", pm: "longmen" },
+  "2026-05-06": { am: "longmen", pm: "longmen" },
+  "2026-05-07": { am: "longmen", pm: "longmen" },
+  "2026-05-08": { am: "longmen", pm: "longmen" },
+  "2026-05-09": { am: "yongyun", pm: "yongyun" },
+  "2026-05-10": { am: "closed", pm: "closed" },
+  "2026-05-11": { am: "longmen", pm: "longmen" },
+  "2026-05-12": { am: "longmen", pm: "closed" },
+  "2026-05-13": { am: "closed", pm: "closed", note: "月考II" },
+  "2026-05-14": { am: "closed", pm: "longmen", note: "月考II" },
+  "2026-05-15": { am: "longmen", pm: "longmen" },
+  "2026-05-16": { am: "yongyun", pm: "yongyun" },
+  "2026-05-17": { am: "closed", pm: "closed" },
+  "2026-05-18": { am: "longmen", pm: "longmen" },
+  "2026-05-19": { am: "longmen", pm: "longmen" },
+  "2026-05-20": { am: "longmen", pm: "longmen" },
+  "2026-05-21": { am: "longmen", pm: "longmen" },
+  "2026-05-22": { am: "longmen", pm: "longmen" },
+  "2026-05-23": { am: "yongyun", pm: "yongyun" },
+  "2026-05-24": { am: "closed", pm: "closed" },
+  "2026-05-25": { am: "longmen", pm: "longmen" },
+  "2026-05-26": { am: "longmen", pm: "longmen" },
+  "2026-05-27": { am: "longmen", pm: "longmen" },
+  "2026-05-28": { am: "longmen", pm: "longmen" },
+  "2026-05-29": { am: "longmen", pm: "longmen" },
+  "2026-05-30": { am: "yongyun", pm: "yongyun" },
+  "2026-05-31": { am: "closed", pm: "closed" },
+  "2026-06-01": { am: "longmen", pm: "longmen" },
+  "2026-06-02": { am: "longmen", pm: "longmen" },
+  "2026-06-03": { am: "longmen", pm: "longmen" },
+  "2026-06-04": { am: "longmen", pm: "longmen" },
+  "2026-06-05": { am: "longmen", pm: "longmen" },
+  "2026-06-06": { am: "yongyun", pm: "yongyun" },
+  "2026-06-07": { am: "closed", pm: "closed" },
+  "2026-06-08": { am: "longmen", pm: "longmen" },
+  "2026-06-09": { am: "longmen", pm: "longmen" },
+  "2026-06-10": { am: "longmen", pm: "longmen" },
+  "2026-06-11": { am: "longmen", pm: "longmen" },
+  "2026-06-12": { am: "longmen", pm: "longmen" },
+  "2026-06-13": { am: "yongyun", pm: "yongyun" },
+  "2026-06-14": { am: "closed", pm: "closed" },
+  "2026-06-15": { am: "longmen", pm: "longmen" },
+  "2026-06-16": { am: "longmen", pm: "longmen" },
+  "2026-06-17": { am: "longmen", pm: "longmen" },
+  "2026-06-18": { am: "longmen", pm: "longmen" },
+  "2026-06-19": { am: "yongyun", pm: "yongyun", note: "端午節" },
+  "2026-06-20": { am: "yongyun", pm: "yongyun" },
+  "2026-06-21": { am: "closed", pm: "closed" },
+  "2026-06-22": { am: "longmen", pm: "longmen" },
+  "2026-06-23": { am: "longmen", pm: "longmen" },
+  "2026-06-24": { am: "longmen", pm: "longmen" },
+  "2026-06-25": { am: "longmen", pm: "closed" },
+  "2026-06-26": { am: "closed", pm: "closed", note: "月考III" },
+  "2026-06-27": { am: "yongyun", pm: "yongyun" },
+  "2026-06-28": { am: "closed", pm: "closed" },
+  "2026-06-29": { am: "closed", pm: "longmen", note: "月考III" },
+  "2026-06-30": { am: "longmen", pm: "longmen" },
+  "2026-07-01": { am: "yongyun", pm: "yongyun" },
+  "2026-07-02": { am: "yongyun", pm: "yongyun" },
+  "2026-07-03": { am: "yongyun", pm: "yongyun" },
+  "2026-07-04": { am: "yongyun", pm: "yongyun" },
+  "2026-07-05": { am: "closed", pm: "closed" },
+  "2026-07-06": { am: "yongyun", pm: "yongyun" },
+  "2026-07-07": { am: "yongyun", pm: "yongyun" },
+  "2026-07-08": { am: "yongyun", pm: "yongyun" },
+  "2026-07-09": { am: "yongyun", pm: "yongyun" },
+  "2026-07-10": { am: "yongyun", pm: "yongyun" },
+  "2026-07-11": { am: "yongyun", pm: "yongyun" },
+  "2026-07-12": { am: "closed", pm: "closed" },
+  "2026-07-13": { am: "longmen", pm: "yongyun" },
+  "2026-07-14": { am: "longmen", pm: "yongyun" },
+  "2026-07-15": { am: "longmen", pm: "yongyun" },
+  "2026-07-16": { am: "longmen", pm: "yongyun" },
+  "2026-07-17": { am: "longmen", pm: "yongyun" },
+  "2026-07-18": { am: "yongyun", pm: "yongyun" },
+  "2026-07-19": { am: "closed", pm: "closed" },
+  "2026-07-20": { am: "longmen", pm: "yongyun" },
+  "2026-07-21": { am: "longmen", pm: "yongyun" },
+  "2026-07-22": { am: "longmen", pm: "yongyun" },
+  "2026-07-23": { am: "longmen", pm: "yongyun" },
+  "2026-07-24": { am: "longmen", pm: "yongyun" },
+  "2026-07-25": { am: "yongyun", pm: "yongyun" },
+  "2026-07-26": { am: "closed", pm: "closed" },
+  "2026-07-27": { am: "longmen", pm: "yongyun" },
+  "2026-07-28": { am: "longmen", pm: "yongyun" },
+  "2026-07-29": { am: "longmen", pm: "yongyun" },
+  "2026-07-30": { am: "longmen", pm: "yongyun" },
+  "2026-07-31": { am: "longmen", pm: "yongyun" },
+  "2026-08-01": { am: "yongyun", pm: "yongyun" },
+  "2026-08-02": { am: "closed", pm: "closed" },
+  "2026-08-03": { am: "longmen", pm: "yongyun" },
+  "2026-08-04": { am: "longmen", pm: "yongyun" },
+  "2026-08-05": { am: "longmen", pm: "yongyun" },
+  "2026-08-06": { am: "longmen", pm: "yongyun" },
+  "2026-08-07": { am: "longmen", pm: "yongyun" },
+  "2026-08-08": { am: "yongyun", pm: "yongyun" },
+  "2026-08-09": { am: "closed", pm: "closed" },
+  "2026-08-10": { am: "yongyun", pm: "yongyun" },
+  "2026-08-11": { am: "yongyun", pm: "yongyun" },
+  "2026-08-12": { am: "yongyun", pm: "yongyun" },
+  "2026-08-13": { am: "yongyun", pm: "yongyun" },
+  "2026-08-14": { am: "yongyun", pm: "yongyun" },
+  "2026-08-15": { am: "yongyun", pm: "yongyun" },
+  "2026-08-16": { am: "closed", pm: "closed" },
+  "2026-08-17": { am: "yongyun", pm: "yongyun" },
+  "2026-08-18": { am: "yongyun", pm: "yongyun" },
+  "2026-08-19": { am: "yongyun", pm: "yongyun" },
+  "2026-08-20": { am: "yongyun", pm: "yongyun" },
+  "2026-08-21": { am: "yongyun", pm: "yongyun" },
+  "2026-08-22": { am: "yongyun", pm: "yongyun" },
+  "2026-08-23": { am: "closed", pm: "closed" },
+  "2026-08-24": { am: "yongyun", pm: "yongyun" },
+  "2026-08-25": { am: "yongyun", pm: "yongyun" },
+  "2026-08-26": { am: "yongyun", pm: "yongyun" },
+  "2026-08-27": { am: "yongyun", pm: "yongyun" },
+  "2026-08-28": { am: "yongyun", pm: "yongyun" },
+  "2026-08-29": { am: "yongyun", pm: "yongyun" },
+  "2026-08-30": { am: "closed", pm: "closed" },
+  "2026-08-31": { am: "yongyun", pm: "yongyun" },
+};
+
+// 取得行事曆預設場地（如果該日有 Excel 行事曆設定 → 用之；否則回 fallback）
+const getCalendarVenue = (dateStr, period) => {
+  const entry = VENUE_CALENDAR[dateStr];
+  if (entry && entry[period]) return entry[period];
+  // fallback：週六預設永運，平日預設龍門
   const d = fromDateStr(dateStr);
   return d.getDay() === 6 ? "yongyun" : "longmen";
 };
-// 取得某天某時段的場地（優先讀 venue 設定，沒設讀預設）
+// 取得某天該日的整日備註（如果行事曆有設定）
+const getCalendarNote = (dateStr) => {
+  const entry = VENUE_CALENDAR[dateStr];
+  return entry?.note || null;
+};
+// 預設場地（保留舊 API 但改為呼叫 calendar）
+const getDefaultVenue = (dateStr) => getCalendarVenue(dateStr, "am");
+// 取得某天某時段的場地（優先順序：手動設定 > 行事曆預設 > fallback）
 const getVenue = (attendance, dateStr, period) => {
   const venueObj = attendance?.[dateStr]?.venue;
   if (venueObj && venueObj[period]) return venueObj[period];
-  return getDefaultVenue(dateStr);
+  return getCalendarVenue(dateStr, period);
 };
 
 const getDateInfo = (dateStr) => {
@@ -836,6 +1221,14 @@ function AttendanceApp({ user }) {
           {tab === "audit" && isOwner && (
             <AuditLogView user={user} logAction={logAction} />
           )}
+          {tab === "settings" && isOwner && (
+            <SettingsView
+              user={user}
+              attendance={attendance}
+              setAttendance={setAttendance}
+              logAction={logAction}
+            />
+          )}
         </div>
 
         <footer className="mt-10 pt-6 border-t flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] sm:text-xs tk-l"
@@ -860,6 +1253,7 @@ function TabBar({ tab, setTab, isOwner }) {
     { k: "monthly", l: "當月統計", icon: BarChart3 },
     { k: "manage", l: "管理", icon: Settings },
     ...(isOwner ? [{ k: "audit", l: "紀錄", icon: History }] : []),
+    ...(isOwner ? [{ k: "settings", l: "設定", icon: Settings }] : []),
   ];
   return (
     <div className="flex gap-1 mb-4 p-1 rounded-2xl border-2"
@@ -970,11 +1364,11 @@ function MiniCalendar({ selectedDate, onPick, attendance }) {
           const isSelected = ds === selectedDate;
           const isToday = ds === todayStr;
           const hasData = dayHasData(c.d);
-          // 判斷是否有任一場次為永運
-          const isYongyun = !isOff && (
-            getVenue(attendance, ds, "am") === "yongyun" ||
-            getVenue(attendance, ds, "pm") === "yongyun"
-          );
+          const amV = !isOff ? getVenue(attendance, ds, "am") : null;
+          const pmV = !isOff ? getVenue(attendance, ds, "pm") : null;
+          const isYongyun = amV === "yongyun" || pmV === "yongyun";
+          // 整天停練（兩場都 closed）= 灰色
+          const isAllClosed = !isOff && amV === "closed" && pmV === "closed";
           return (
             <button key={i}
                     onClick={() => !isOff && onPick(ds)}
@@ -983,26 +1377,35 @@ function MiniCalendar({ selectedDate, onPick, attendance }) {
                     style={{
                       background: isSelected ? "var(--ink)"
                         : isOff ? "transparent"
+                        : isAllClosed ? VENUES.closed.bg
                         : isYongyun ? VENUES.yongyun.bg
                         : "var(--panel-2)",
                       color: isSelected ? "var(--bg)"
                         : isOff ? "var(--mute)"
+                        : isAllClosed ? VENUES.closed.color
                         : isYongyun ? VENUES.yongyun.color
                         : "var(--ink)",
                       border: isToday && !isSelected ? "2px solid var(--accent)" : "2px solid transparent",
                       cursor: isOff ? "not-allowed" : "pointer",
                       fontWeight: isSelected ? 700 : 400,
+                      opacity: isAllClosed && !isSelected ? 0.6 : 1,
                     }}>
               <span className="num">{c.d}</span>
-              {isYongyun && !isSelected && (
+              {isYongyun && !isAllClosed && !isSelected && (
                 <span className="absolute top-0.5 right-0.5 text-[8px] font-bold leading-none"
                       style={{ color: VENUES.yongyun.color }}>
                   永
                 </span>
               )}
+              {isAllClosed && !isSelected && (
+                <span className="absolute top-0.5 right-0.5 text-[8px] font-bold leading-none"
+                      style={{ color: VENUES.closed.color }}>
+                  停
+                </span>
+              )}
               {hasData && !isSelected && (
                 <span className="absolute bottom-1 w-1 h-1 rounded-full"
-                      style={{ background: isYongyun ? VENUES.yongyun.color : "var(--green-2)" }} />
+                      style={{ background: isAllClosed ? VENUES.closed.color : isYongyun ? VENUES.yongyun.color : "var(--green-2)" }} />
               )}
             </button>
           );
@@ -1027,6 +1430,13 @@ function MiniCalendar({ selectedDate, onPick, attendance }) {
             永
           </span>
           永運
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2.5 h-2.5 rounded-sm flex items-center justify-center text-[7px] font-bold"
+                style={{ background: VENUES.closed.bg, color: VENUES.closed.color }}>
+            停
+          </span>
+          停練
         </span>
       </div>
     </div>
@@ -1421,32 +1831,44 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
           })}
         </div>
 
-        {/* 場地切換（極簡單行） */}
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg flex-wrap"
-             style={{ background: "var(--panel-2)" }}>
-          <span className="text-[11px]" style={{ color: "var(--mute)" }}>場地</span>
-          {Object.values(VENUES).map(v => {
-            const active = currentVenue === v.id;
-            return (
-              <button key={v.id} onClick={() => setVenue(v.id)} disabled={locked}
-                      className="btn-tactile px-3 py-1 rounded-md text-[13px] font-medium"
-                      style={{
-                        background: active ? v.color : "transparent",
-                        color: active ? "#fff" : "var(--ink-2)",
-                        border: active ? `1px solid ${v.color}` : "0.5px solid var(--line-strong)",
-                        opacity: locked ? 0.6 : 1,
-                      }}>
-                {v.label}
-              </button>
-            );
-          })}
-          {currentVenue === "yongyun" && (
-            <span className="ml-auto text-[11px] font-bold"
-                  style={{ color: VENUES.yongyun.color }}>
-              永運 +${VENUE_FEE}/人/次
+        {/* 場地切換（極簡單行） — 停練日不顯示按鈕 */}
+        {currentVenue === "closed" ? (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
+               style={{ background: VENUES.closed.bg, color: VENUES.closed.color }}>
+            <span style={{ fontSize: 14 }}>🚫</span>
+            <span className="text-[12px] font-medium">本場停練（行事曆設定）</span>
+            <span className="ml-auto text-[10px]" style={{ opacity: 0.7 }}>
+              如需點名請至「⚙️ 設定」改場地
             </span>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg flex-wrap"
+               style={{ background: "var(--panel-2)" }}>
+            <span className="text-[11px]" style={{ color: "var(--mute)" }}>場地</span>
+            {SELECTABLE_VENUES.map(vid => {
+              const v = VENUES[vid];
+              const active = currentVenue === v.id;
+              return (
+                <button key={v.id} onClick={() => setVenue(v.id)} disabled={locked}
+                        className="btn-tactile px-3 py-1 rounded-md text-[13px] font-medium"
+                        style={{
+                          background: active ? v.color : "transparent",
+                          color: active ? "#fff" : "var(--ink-2)",
+                          border: active ? `1px solid ${v.color}` : "0.5px solid var(--line-strong)",
+                          opacity: locked ? 0.6 : 1,
+                        }}>
+                  {v.label}
+                </button>
+              );
+            })}
+            {currentVenue === "yongyun" && (
+              <span className="ml-auto text-[11px] font-bold"
+                    style={{ color: VENUES.yongyun.color }}>
+                永運 +${VENUE_FEE}/人/次
+              </span>
+            )}
+          </div>
+        )}
       </section>
 
       {/* 鎖定提示：超過 24 小時且非主管理員 */}
@@ -1549,6 +1971,27 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
         </div>
       </section>
 
+      {currentVenue === "closed" ? (
+        <section className="rounded-2xl p-8 border-2 text-center"
+                 style={{ background: VENUES.closed.bg, borderColor: VENUES.closed.color }}>
+          <div style={{ fontSize: 36 }}>🚫</div>
+          <div className="display-cn text-xl sm:text-2xl mt-2 font-bold"
+               style={{ color: VENUES.closed.color }}>
+            今日停練
+          </div>
+          {getCalendarNote(selectedDate) && (
+            <div className="mt-1 text-sm" style={{ color: VENUES.closed.color }}>
+              {getCalendarNote(selectedDate)}
+            </div>
+          )}
+          <div className="mt-3 text-xs" style={{ color: VENUES.closed.color, opacity: 0.7 }}>
+            行事曆排定本場停練，無需點名
+          </div>
+          <div className="mt-3 text-[11px]" style={{ color: VENUES.closed.color, opacity: 0.6 }}>
+            如需臨時開訓，可至「⚙️ 設定」改場地後再來點名
+          </div>
+        </section>
+      ) : (
       <section className="space-y-5">
         {grouped.length === 0 ? (
           <div className="text-center py-12 rounded-xl border-2 border-dashed"
@@ -1569,6 +2012,7 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
           </div>
         ))}
       </section>
+      )}
 
       {stats.noShow > 0 && (
         <section className="p-4 sm:p-5 rounded-2xl border-2"
@@ -2132,43 +2576,58 @@ function DailyTableHeader() {
 function DaySessionSummary({ label, Ic, stats, onClick, venue }) {
   const rate = stats.sch === 0 ? 0 : Math.round(stats.on / stats.sch * 100);
   const venueObj = venue ? VENUES[venue] : null;
+  const isClosed = venue === "closed";
   return (
     <button onClick={onClick}
             className="btn-tactile rounded-2xl p-4 sm:p-5 border-2 text-left"
-            style={{ background: "var(--panel)", borderColor: "var(--line-strong)" }}>
+            style={{
+              background: isClosed ? VENUES.closed.bg : "var(--panel)",
+              borderColor: isClosed ? VENUES.closed.color : "var(--line-strong)",
+              opacity: isClosed ? 0.85 : 1,
+            }}>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <Ic size={18} strokeWidth={2.5} style={{ color: "var(--ink-2)" }} />
-          <span className="display-cn text-lg" style={{ color: "var(--ink)" }}>{label}</span>
+          <Ic size={18} strokeWidth={2.5} style={{ color: isClosed ? VENUES.closed.color : "var(--ink-2)" }} />
+          <span className="display-cn text-lg" style={{ color: isClosed ? VENUES.closed.color : "var(--ink)" }}>{label}</span>
           {venueObj && (
             <span className="text-[10px] px-1.5 py-0.5 rounded font-bold"
                   style={{ background: venueObj.bg, color: venueObj.color }}>
-              📍{venueObj.label}
+              {isClosed ? "🚫" : "📍"}{venueObj.label}
               {venueObj.fee > 0 && <span className="ml-1">${venueObj.fee}</span>}
             </span>
           )}
         </div>
-        <span className="text-[10px] tk-l" style={{ color: "var(--mute)" }}>點此前往點名 →</span>
+        <span className="text-[10px] tk-l" style={{ color: isClosed ? VENUES.closed.color : "var(--mute)", opacity: 0.8 }}>
+          {isClosed ? "本場停練" : "點此前往點名 →"}
+        </span>
       </div>
-      <div className="flex items-baseline gap-1 mb-2">
-        <span className="num text-3xl sm:text-4xl font-bold" style={{ color: "var(--green)" }}>{stats.on}</span>
-        <span className="num text-sm" style={{ color: "var(--mute)" }}>／ {stats.sch}</span>
-        <span className="text-xs ml-1" style={{ color: "var(--mute)" }}>實到 / 表定</span>
-      </div>
-      <div className="h-1.5 rounded-full overflow-hidden mb-2" style={{ background: "rgba(0,0,0,0.06)" }}>
-        <div className="h-full" style={{ width: `${rate}%`, background: "var(--green)", transition: "width 0.3s" }} />
-      </div>
-      <div className="flex flex-wrap gap-1.5 text-[10px] sm:text-xs">
-        <span className="num">出席率 {rate}%</span>
-        <span style={{ color: "var(--mute)" }}>·</span>
-        <span style={{ color: "var(--red)" }}>缺席 {stats.no}</span>
-        <span style={{ color: "var(--mute)" }}>·</span>
-        <span style={{ color: "var(--amber)" }}>待點 {stats.pn}</span>
-        {stats.bn > 0 && (<>
-          <span style={{ color: "var(--mute)" }}>·</span>
-          <span style={{ color: "var(--blue)" }}>補訓 {stats.bn}</span>
-        </>)}
-      </div>
+      {isClosed ? (
+        <div className="text-sm" style={{ color: VENUES.closed.color, opacity: 0.7 }}>
+          行事曆排定，無需點名
+        </div>
+      ) : (
+        <>
+          <div className="flex items-baseline gap-1 mb-2">
+            <span className="num text-3xl sm:text-4xl font-bold" style={{ color: "var(--green)" }}>{stats.on}</span>
+            <span className="num text-sm" style={{ color: "var(--mute)" }}>／ {stats.sch}</span>
+            <span className="text-xs ml-1" style={{ color: "var(--mute)" }}>實到 / 表定</span>
+          </div>
+          <div className="h-1.5 rounded-full overflow-hidden mb-2" style={{ background: "rgba(0,0,0,0.06)" }}>
+            <div className="h-full" style={{ width: `${rate}%`, background: "var(--green)", transition: "width 0.3s" }} />
+          </div>
+          <div className="flex flex-wrap gap-1.5 text-[10px] sm:text-xs">
+            <span className="num">出席率 {rate}%</span>
+            <span style={{ color: "var(--mute)" }}>·</span>
+            <span style={{ color: "var(--red)" }}>缺席 {stats.no}</span>
+            <span style={{ color: "var(--mute)" }}>·</span>
+            <span style={{ color: "var(--amber)" }}>待點 {stats.pn}</span>
+            {stats.bn > 0 && (<>
+              <span style={{ color: "var(--mute)" }}>·</span>
+              <span style={{ color: "var(--blue)" }}>補訓 {stats.bn}</span>
+            </>)}
+          </div>
+        </>
+      )}
     </button>
   );
 }
@@ -4769,6 +5228,280 @@ function AuditLogRow({ log }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ============ SETTINGS VIEW ============
+function SettingsView({ user, attendance, setAttendance, logAction }) {
+  const [reimporting, setReimporting] = useState(false);
+  const [confirmStep, setConfirmStep] = useState(0); // 0=idle, 1=confirm, 2=done
+  const [resultText, setResultText] = useState("");
+
+  // 計算行事曆統計
+  const calStats = useMemo(() => {
+    const dates = Object.keys(VENUE_CALENDAR);
+    const months = new Set(dates.map(d => d.slice(0, 7)));
+    let yyDays = 0, longmenDays = 0, closedDays = 0;
+    let yyAm = 0, yyPm = 0;
+    Object.values(VENUE_CALENDAR).forEach(v => {
+      if (v.am === "yongyun") yyAm++;
+      if (v.pm === "yongyun") yyPm++;
+      if (v.am === "yongyun" || v.pm === "yongyun") yyDays++;
+      if (v.am === "longmen" || v.pm === "longmen") longmenDays++;
+      if (v.am === "closed" && v.pm === "closed") closedDays++;
+    });
+    return {
+      total: dates.length,
+      months: months.size,
+      firstDate: dates.sort()[0],
+      lastDate: dates.sort().slice(-1)[0],
+      yyAm, yyPm,
+      yyDays, longmenDays, closedDays,
+      noteDays: Object.values(VENUE_CALENDAR).filter(v => v.note).length,
+    };
+  }, []);
+
+  // 判斷一天是否「已有任何點名資料」
+  // 包含：任何人的 am/pm 點名、遲到、個練、備註、整日備註
+  const hasAttendanceData = (dayData) => {
+    if (!dayData) return false;
+    const checkObj = (o) => o && Object.keys(o).length > 0;
+    if (checkObj(dayData.am)) return true;
+    if (checkObj(dayData.pm)) return true;
+    if (checkObj(dayData.am_late)) return true;
+    if (checkObj(dayData.pm_late)) return true;
+    if (checkObj(dayData.am_solo)) return true;
+    if (checkObj(dayData.pm_solo)) return true;
+    if (checkObj(dayData.am_notes)) return true;
+    if (checkObj(dayData.pm_notes)) return true;
+    if (dayData.notes && dayData.notes.trim()) return true;
+    return false;
+  };
+
+  // 預覽：哪些日期會被覆蓋、哪些會被保留
+  const reimportPreview = useMemo(() => {
+    const willUpdate = [];   // 沒人點名 → 會被重設
+    const willKeep = [];     // 有人點名 → 保留
+    Object.keys(VENUE_CALENDAR).forEach(dateStr => {
+      const dayData = attendance[dateStr];
+      if (hasAttendanceData(dayData)) {
+        willKeep.push(dateStr);
+      } else {
+        willUpdate.push(dateStr);
+      }
+    });
+    return { willUpdate: willUpdate.length, willKeep: willKeep.length };
+  }, [attendance]);
+
+  const doReimport = async () => {
+    setReimporting(true);
+    let updatedCount = 0;
+    let skippedCount = 0;
+    const updateDates = [];
+
+    setAttendance(prev => {
+      const next = { ...prev };
+      Object.keys(VENUE_CALENDAR).forEach(dateStr => {
+        const dayData = next[dateStr];
+        if (hasAttendanceData(dayData)) {
+          skippedCount++;
+          return;
+        }
+        // 重設此日的場地（保留可能存在的整日備註，因為使用者可能加過）
+        const calEntry = VENUE_CALENDAR[dateStr];
+        const newDay = { ...(dayData || {}) };
+        newDay.venue = { am: calEntry.am, pm: calEntry.pm };
+        // 如果該日沒人手動加過備註且行事曆有備註 → 套用
+        if (!newDay.notes && calEntry.note) {
+          newDay.notes = calEntry.note;
+        }
+        next[dateStr] = newDay;
+        updatedCount++;
+        if (updateDates.length < 5) updateDates.push(dateStr);
+      });
+      return next;
+    }, {
+      // 不指定 dateStr，所以這個 setAttendance 只會本地保存（合理：是大量批次操作）
+      // 實際每日資料的儲存由 setAttendance 內建邏輯處理
+      logPayload: null, // 不寫到日誌（我們手動寫一筆統合的）
+    });
+
+    // 補一筆統合的編輯紀錄
+    if (logAction) {
+      try {
+        await logAction({
+          action: "reimport_calendar",
+          target: "calendar",
+          targetLabel: `重新匯入行事曆（更新 ${updatedCount} 天，保留 ${skippedCount} 天）`,
+          before: null,
+          after: { updatedCount, skippedCount, sampleDates: updateDates },
+          note: "從 Excel 行事曆預設值重新匯入。已有點名資料的日期保持原樣。",
+        });
+      } catch (e) {
+        console.error("logAction failed:", e);
+      }
+    }
+
+    setResultText(`✅ 重新匯入完成！更新 ${updatedCount} 天、保留 ${skippedCount} 天（已有點名資料）`);
+    setConfirmStep(2);
+    setReimporting(false);
+  };
+
+  return (
+    <div className="space-y-4">
+      <header>
+        <h2 className="display-cn text-xl sm:text-2xl mb-1" style={{ color: "var(--ink)" }}>
+          ⚙️ 系統設定
+        </h2>
+        <p className="text-xs sm:text-sm" style={{ color: "var(--mute)" }}>
+          重要管理功能（僅主管理員可存取）
+        </p>
+      </header>
+
+      {/* 行事曆狀態 */}
+      <section className="rounded-2xl border-2 p-4 sm:p-5"
+               style={{ background: "var(--panel)", borderColor: "var(--line-strong)" }}>
+        <div className="flex items-center gap-2 mb-3">
+          <CalendarDays size={18} strokeWidth={2.5} style={{ color: "var(--ink-2)" }} />
+          <h3 className="display-cn text-base sm:text-lg" style={{ color: "var(--ink)" }}>
+            Excel 行事曆狀態
+          </h3>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+          <div>
+            <div className="text-[10px] tk-l" style={{ color: "var(--mute)" }}>涵蓋月份</div>
+            <div className="num text-2xl font-bold" style={{ color: "var(--ink)" }}>{calStats.months}</div>
+            <div className="text-[10px]" style={{ color: "var(--mute)" }}>個月</div>
+          </div>
+          <div>
+            <div className="text-[10px] tk-l" style={{ color: "var(--mute)" }}>總天數</div>
+            <div className="num text-2xl font-bold" style={{ color: "var(--ink)" }}>{calStats.total}</div>
+            <div className="text-[10px]" style={{ color: "var(--mute)" }}>天</div>
+          </div>
+          <div>
+            <div className="text-[10px] tk-l" style={{ color: VENUES.yongyun.color }}>永運場次</div>
+            <div className="num text-2xl font-bold" style={{ color: VENUES.yongyun.color }}>
+              {calStats.yyAm + calStats.yyPm}
+            </div>
+            <div className="text-[10px]" style={{ color: "var(--mute)" }}>場 (早+午)</div>
+          </div>
+          <div>
+            <div className="text-[10px] tk-l" style={{ color: VENUES.closed.color }}>整日停練</div>
+            <div className="num text-2xl font-bold" style={{ color: VENUES.closed.color }}>
+              {calStats.closedDays}
+            </div>
+            <div className="text-[10px]" style={{ color: "var(--mute)" }}>天</div>
+          </div>
+        </div>
+        <div className="text-xs px-3 py-2 rounded-lg"
+             style={{ background: "var(--panel-2)", color: "var(--ink-2)" }}>
+          📅 範圍：<span className="num">{calStats.firstDate}</span> ~ <span className="num">{calStats.lastDate}</span>
+          {" · "}
+          <span style={{ color: "var(--mute)" }}>
+            其中 {calStats.noteDays} 天有特殊備註（比賽、月考、節日）
+          </span>
+        </div>
+      </section>
+
+      {/* 重新匯入行事曆 */}
+      <section className="rounded-2xl border-2 p-4 sm:p-5"
+               style={{ background: "var(--amber-bg)", borderColor: "var(--amber)" }}>
+        <div className="flex items-center gap-2 mb-2">
+          <RefreshCw size={18} strokeWidth={2.5} style={{ color: "#5C4810" }} />
+          <h3 className="display-cn text-base sm:text-lg" style={{ color: "#5C4810" }}>
+            重新匯入行事曆
+          </h3>
+        </div>
+        <div className="text-xs sm:text-sm space-y-2 mb-3" style={{ color: "#5C4810" }}>
+          <p>從 Excel 行事曆重新套用場地預設值。</p>
+          <p>
+            ✅ <strong>不會影響</strong>已有任何點名資料的日期（出席/缺席/遲到/個練/備註）
+          </p>
+          <p>
+            🔄 <strong>會重設</strong>沒人點過名的日期，套用 Excel 排定的場地
+          </p>
+        </div>
+
+        {/* 預覽 */}
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="rounded-lg p-3" style={{ background: "rgba(255, 255, 255, 0.6)" }}>
+            <div className="text-[10px] tk-l" style={{ color: "#5C4810" }}>會被重設</div>
+            <div className="num text-2xl font-bold" style={{ color: "#5C4810" }}>{reimportPreview.willUpdate}</div>
+            <div className="text-[10px]" style={{ color: "#5C4810", opacity: 0.7 }}>天（沒人點名）</div>
+          </div>
+          <div className="rounded-lg p-3" style={{ background: "rgba(255, 255, 255, 0.6)" }}>
+            <div className="text-[10px] tk-l" style={{ color: "var(--green)" }}>會被保留</div>
+            <div className="num text-2xl font-bold" style={{ color: "var(--green)" }}>{reimportPreview.willKeep}</div>
+            <div className="text-[10px]" style={{ color: "#5C4810", opacity: 0.7 }}>天（已有點名）</div>
+          </div>
+        </div>
+
+        {confirmStep === 0 && (
+          <button onClick={() => setConfirmStep(1)}
+                  className="btn-tactile w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium text-sm"
+                  style={{ background: "var(--amber)", color: "#3D2F00" }}>
+            <RefreshCw size={14} strokeWidth={2.5} />
+            重新匯入行事曆
+          </button>
+        )}
+
+        {confirmStep === 1 && (
+          <div className="space-y-2">
+            <div className="rounded-lg p-3 border-2"
+                 style={{ background: "var(--red-bg)", borderColor: "var(--red)" }}>
+              <div className="flex items-center gap-2 mb-1">
+                <AlertTriangle size={16} strokeWidth={2.5} style={{ color: "var(--red)" }} />
+                <span className="font-bold text-sm" style={{ color: "var(--red)" }}>確認要重新匯入嗎？</span>
+              </div>
+              <p className="text-xs" style={{ color: "var(--ink-2)" }}>
+                將更新 <strong>{reimportPreview.willUpdate}</strong> 天的場地設定。
+                此動作會記錄在編輯紀錄中。
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmStep(0)} disabled={reimporting}
+                      className="btn-tactile flex-1 px-4 py-2 rounded-lg text-sm font-medium border-2"
+                      style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+                取消
+              </button>
+              <button onClick={doReimport} disabled={reimporting}
+                      className="btn-tactile flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium"
+                      style={{ background: "var(--red)", color: "#fff", opacity: reimporting ? 0.6 : 1 }}>
+                {reimporting ? "處理中..." : "✓ 確認執行"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {confirmStep === 2 && (
+          <div className="rounded-lg p-3 border-2"
+               style={{ background: "var(--green-bg)", borderColor: "var(--green)" }}>
+            <div className="text-sm font-bold mb-1" style={{ color: "var(--green)" }}>
+              {resultText}
+            </div>
+            <button onClick={() => setConfirmStep(0)}
+                    className="btn-tactile mt-2 px-3 py-1 rounded text-xs"
+                    style={{ background: "var(--ink)", color: "var(--bg)" }}>
+              關閉
+            </button>
+          </div>
+        )}
+      </section>
+
+      {/* 系統資訊 */}
+      <section className="rounded-2xl border-2 p-4 sm:p-5"
+               style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
+        <h3 className="display-cn text-base sm:text-lg mb-3" style={{ color: "var(--ink)" }}>
+          系統資訊
+        </h3>
+        <div className="text-xs space-y-1.5" style={{ color: "var(--ink-2)" }}>
+          <div>📍 場地預設邏輯：手動設定 → Excel 行事曆 → 週六永運 / 平日龍門</div>
+          <div>💰 永運費用：每人每場次 ${VENUE_FEE}（個練免費）</div>
+          <div>⭐ 個練規則：永運場次當日勾選任一場 → 整天免費</div>
+          <div>🔒 編輯期限：點名後 24 小時可修改（主管理員不受限）</div>
+        </div>
+      </section>
     </div>
   );
 }
