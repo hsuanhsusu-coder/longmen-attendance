@@ -3932,8 +3932,11 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
             <div className="flex items-center gap-1">
               <Sun size={12} strokeWidth={2.5} style={{ color: "#2E2820" }} />
               <span style={{ color: "#2E2820" }}>早</span>
-              <span className="num" style={{ color: "#1F5C3A", fontWeight: 700 }}>{amS.on}</span>
-              <span className="num" style={{ color: "#8B8275" }}>／{amS.sch}</span>
+              <span className="num" style={{ color: "#1F5C3A", fontWeight: 700 }}>{amS.on + amS.bn}</span>
+              <span className="num" style={{ color: "#8B8275" }}>／{amS.sch + amS.bn}</span>
+              {amS.bn > 0 && (
+                <span className="num" style={{ color: "#2F4FA8", fontWeight: 700 }}>+補{amS.bn}</span>
+              )}
               {amS.no > 0 && (
                 <span className="num" style={{ color: "#B23A28", fontWeight: 700 }}>缺{amS.no}</span>
               )}
@@ -3951,8 +3954,11 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
             <div className="flex items-center gap-1">
               <Moon size={12} strokeWidth={2.5} style={{ color: "#2E2820" }} />
               <span style={{ color: "#2E2820" }}>午</span>
-              <span className="num" style={{ color: "#1F5C3A", fontWeight: 700 }}>{pmS.on}</span>
-              <span className="num" style={{ color: "#8B8275" }}>／{pmS.sch}</span>
+              <span className="num" style={{ color: "#1F5C3A", fontWeight: 700 }}>{pmS.on + pmS.bn}</span>
+              <span className="num" style={{ color: "#8B8275" }}>／{pmS.sch + pmS.bn}</span>
+              {pmS.bn > 0 && (
+                <span className="num" style={{ color: "#2F4FA8", fontWeight: 700 }}>+補{pmS.bn}</span>
+              )}
               {pmS.no > 0 && (
                 <span className="num" style={{ color: "#B23A28", fontWeight: 700 }}>缺{pmS.no}</span>
               )}
