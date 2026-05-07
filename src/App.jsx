@@ -4448,6 +4448,140 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
   // CASE 3: Admin → full edit
   const sortedRoster = [...roster].sort((a, b) => a.seq - b.seq);
 
+  // ===== 匯出隊員名單 =====
+  const exportRoster = () => {
+    const wb = XLSX.utils.book_new();
+
+    // ========== Sheet 1: 基本資料 ==========
+    const basicData = sortedRoster.map(p => ({
+      "序號": p.seq,
+      "班級": p.cls,
+      "座號": p.num,
+      "姓名": p.name,
+      "年級": GRADE_NAMES[p.grade],
+    }));
+    const ws1 = XLSX.utils.json_to_sheet(basicData);
+    ws1["!cols"] = [
+      { wch: 6 }, { wch: 8 }, { wch: 6 }, { wch: 12 }, { wch: 8 },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws1, "基本資料");
+
+    // ========== Sheet 2: 訓練表（每場勾選） ==========
+    const schData = sortedRoster.map(p => ({
+      "序號": p.seq,
+      "班級": p.cls,
+      "座號": p.num,
+      "姓名": p.name,
+      "年級": GRADE_NAMES[p.grade],
+      "週一早": p.sch[0] === 1 ? "✓" : "",
+      "週一午": p.sch[1] === 1 ? "✓" : "",
+      "週二早": p.sch[2] === 1 ? "✓" : "",
+      "週二午": p.sch[3] === 1 ? "✓" : "",
+      "週三早": p.sch[4] === 1 ? "✓" : "",
+      "週三午": p.sch[5] === 1 ? "✓" : "",
+      "週四早": p.sch[6] === 1 ? "✓" : "",
+      "週四午": p.sch[7] === 1 ? "✓" : "",
+      "週五早": p.sch[8] === 1 ? "✓" : "",
+      "週五午": p.sch[9] === 1 ? "✓" : "",
+      "週六早": p.sch[10] === 1 ? "✓" : "",
+      "週六午": p.sch[11] === 1 ? "✓" : "",
+      "週訓練數": p.sch.filter(x => x === 1).length,
+    }));
+    const ws2 = XLSX.utils.json_to_sheet(schData);
+    ws2["!cols"] = [
+      { wch: 6 }, { wch: 8 }, { wch: 6 }, { wch: 12 }, { wch: 8 },
+      { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 6 },
+      { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 6 },
+      { wch: 9 },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws2, "訓練表");
+
+    // ========== Sheet 3: 訓練表（簡潔版） ==========
+    const dayLabels = ["一", "二", "三", "四", "五", "六"];
+    const schSimpleData = sortedRoster.map(p => {
+      const amDays = [];
+      const pmDays = [];
+      for (let i = 0; i < 6; i++) {
+        if (p.sch[i * 2] === 1) amDays.push(dayLabels[i]);
+        if (p.sch[i * 2 + 1] === 1) pmDays.push(dayLabels[i]);
+      }
+      return {
+        "序號": p.seq,
+        "班級": p.cls,
+        "座號": p.num,
+        "姓名": p.name,
+        "年級": GRADE_NAMES[p.grade],
+        "早訓日": amDays.length > 0 ? amDays.join("、") : "—",
+        "午訓日": pmDays.length > 0 ? pmDays.join("、") : "—",
+        "早訓場數": amDays.length,
+        "午訓場數": pmDays.length,
+        "週總場數": amDays.length + pmDays.length,
+      };
+    });
+    const ws3 = XLSX.utils.json_to_sheet(schSimpleData);
+    ws3["!cols"] = [
+      { wch: 6 }, { wch: 8 }, { wch: 6 }, { wch: 12 }, { wch: 8 },
+      { wch: 18 }, { wch: 18 }, { wch: 9 }, { wch: 9 }, { wch: 9 },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws3, "訓練表（簡潔版）");
+
+    // ========== Sheet 4: 年級彙整 ==========
+    const gradeData = [];
+    [9, 8, 7].forEach(g => {
+      const list = sortedRoster.filter(p => p.grade === g);
+      list.forEach(p => {
+        gradeData.push({
+          "年級": GRADE_NAMES[g],
+          "序號": p.seq,
+          "班級": p.cls,
+          "座號": p.num,
+          "姓名": p.name,
+          "週訓練數": p.sch.filter(x => x === 1).length,
+        });
+      });
+      // 該年級小計
+      gradeData.push({
+        "年級": `─ ${GRADE_NAMES[g]}小計 ─`,
+        "序號": "",
+        "班級": "",
+        "座號": "",
+        "姓名": `共 ${list.length} 人`,
+        "週訓練數": list.reduce((a, p) => a + p.sch.filter(x => x === 1).length, 0),
+      });
+      gradeData.push({}); // 空行分隔
+    });
+    // 總計
+    gradeData.push({
+      "年級": "─ 全隊合計 ─",
+      "序號": "",
+      "班級": "",
+      "座號": "",
+      "姓名": `共 ${sortedRoster.length} 人`,
+      "週訓練數": sortedRoster.reduce((a, p) => a + p.sch.filter(x => x === 1).length, 0),
+    });
+    const ws4 = XLSX.utils.json_to_sheet(gradeData);
+    ws4["!cols"] = [
+      { wch: 14 }, { wch: 6 }, { wch: 8 }, { wch: 6 }, { wch: 14 }, { wch: 9 },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws4, "年級彙整");
+
+    // 檔名加日期
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}${pad(today.getMonth() + 1)}${pad(today.getDate())}`;
+    XLSX.writeFile(wb, `龍門泳隊_隊員名單_${dateStr}.xlsx`);
+
+    // 編輯紀錄
+    if (logAction) {
+      logAction({
+        action: "export_roster",
+        target: "roster",
+        targetLabel: `匯出隊員名單（${sortedRoster.length} 人）`,
+        before: null,
+        after: { count: sortedRoster.length, format: "xlsx" },
+      });
+    }
+  };
+
   const updatePerson = (seq, patch, originalPerson) => {
     setRoster(prev => prev.map(p => p.seq === seq ? { ...p, ...patch } : p), {
       logAction: "edit_person",
@@ -4562,12 +4696,20 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
               共 <span className="num">{roster.length}</span> 位隊員
             </div>
           </div>
-          <button onClick={() => setAdding(true)}
-                  className="btn-tactile flex items-center gap-1.5 px-4 py-2 rounded-lg border-2 font-medium"
-                  style={{ borderColor: "var(--accent)", background: "var(--accent)", color: "#fff" }}>
-            <Plus size={16} strokeWidth={2.5} />
-            新增隊員
-          </button>
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={exportRoster}
+                    className="btn-tactile flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg border-2 font-medium text-sm"
+                    style={{ borderColor: "var(--line-strong)", background: "var(--panel)", color: "var(--ink-2)" }}>
+              <Download size={14} strokeWidth={2.5} />
+              匯出名單
+            </button>
+            <button onClick={() => setAdding(true)}
+                    className="btn-tactile flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg border-2 font-medium text-sm"
+                    style={{ borderColor: "var(--accent)", background: "var(--accent)", color: "#fff" }}>
+              <Plus size={16} strokeWidth={2.5} />
+              新增隊員
+            </button>
+          </div>
         </div>
         <div className="mt-3 pt-3 border-t text-xs leading-relaxed"
              style={{ borderColor: "var(--line)", color: "var(--ink-2)" }}>
@@ -5505,6 +5647,9 @@ const ACTION_LABELS = {
   add_admin: "👤 新增管理員",
   remove_admin: "✗ 移除管理員",
   set_first_owner: "👑 初始化主管理員",
+  reimport_calendar: "🔄 重新匯入行事曆",
+  edit_calendar: "📅 編輯行事曆",
+  export_roster: "📥 匯出隊員名單",
 };
 
 function AuditLogRow({ log }) {
