@@ -3783,8 +3783,22 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
   );
   const notedRows = rows.filter(r => r.amNote || r.pmNote);
 
+  // 早/午分開的待點名
+  const amPendingees = rows.filter(r => r.amStatus === "pending");
+  const pmPendingees = rows.filter(r => r.pmStatus === "pending");
+  // 場次是否「已開始點名」：只要有任何人被標 present/absent 就算
+  const amStarted = rows.some(r =>
+    r.amStatus === "on_time" || r.amStatus === "no_show" ||
+    r.amStatus === "bonus" || r.amStatus === "confirmed_excused"
+  );
+  const pmStarted = rows.some(r =>
+    r.pmStatus === "on_time" || r.pmStatus === "no_show" ||
+    r.pmStatus === "bonus" || r.pmStatus === "confirmed_excused"
+  );
+
   // Tiny status chip - 4 distinct outcomes (+ late variant)
-  const Tiny = ({ status, late }) => {
+  // sessionStarted: 該場次是否已有人被點名（沒開始時 pending 顯示 — 而非 ?）
+  const Tiny = ({ status, late, sessionStarted = true }) => {
     const map = {
       // 表定+到 = 正常出席 (深綠實心)
       on_time:           { t: "✓", bg: "#1F5C3A", fg: "#fff", bd: "transparent" },
@@ -3800,6 +3814,10 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
       pending_excused:   { t: "—", bg: "#EAE3D4", fg: "#B7AC93", bd: "transparent" },
     };
     let s = map[status] || map.pending_excused;
+    // 場次未開始時，pending 變灰 — 而不是黃 ?
+    if (!sessionStarted && status === "pending") {
+      s = { t: "·", bg: "#EAE3D4", fg: "#B7AC93", bd: "transparent" };
+    }
     // 遲到時：橘色背景，符號改鐘
     if (late && (status === "on_time" || status === "bonus")) {
       s = { t: "🕐", bg: "#E07B30", fg: "#fff", bd: "#A85518" };
@@ -3860,8 +3878,8 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
             <span style={{ marginLeft: 3, fontSize: 9 }} title="有備註">📝</span>
           )}
         </span>
-        <Tiny status={m.amStatus} late={m.amLate} />
-        <Tiny status={m.pmStatus} late={m.pmLate} />
+        <Tiny status={m.amStatus} late={m.amLate} sessionStarted={amStarted} />
+        <Tiny status={m.pmStatus} late={m.pmLate} sessionStarted={pmStarted} />
       </div>
     );
   };
@@ -3932,19 +3950,28 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
             <div className="flex items-center gap-1">
               <Sun size={12} strokeWidth={2.5} style={{ color: "#2E2820" }} />
               <span style={{ color: "#2E2820" }}>早</span>
-              <span className="num" style={{ color: "#1F5C3A", fontWeight: 700 }}>{amS.on + amS.bn}</span>
-              <span className="num" style={{ color: "#8B8275" }}>／{amS.sch + amS.bn}</span>
-              {amS.bn > 0 && (
-                <span className="num" style={{ color: "#2F4FA8", fontWeight: 700 }}>+補{amS.bn}</span>
-              )}
-              {amS.no > 0 && (
-                <span className="num" style={{ color: "#B23A28", fontWeight: 700 }}>缺{amS.no}</span>
-              )}
-              {amS.late > 0 && (
-                <span className="num" style={{ color: "#E07B30", fontWeight: 700 }}>遲{amS.late}</span>
-              )}
-              {amS.pn > 0 && (
-                <span className="num" style={{ color: "#B8860B", fontWeight: 700 }}>待{amS.pn}</span>
+              {amStarted ? (
+                <>
+                  <span className="num" style={{ color: "#1F5C3A", fontWeight: 700 }}>{amS.on + amS.bn}</span>
+                  <span className="num" style={{ color: "#8B8275" }}>／{amS.sch + amS.bn}</span>
+                  {amS.bn > 0 && (
+                    <span className="num" style={{ color: "#2F4FA8", fontWeight: 700 }}>+補{amS.bn}</span>
+                  )}
+                  {amS.no > 0 && (
+                    <span className="num" style={{ color: "#B23A28", fontWeight: 700 }}>缺{amS.no}</span>
+                  )}
+                  {amS.late > 0 && (
+                    <span className="num" style={{ color: "#E07B30", fontWeight: 700 }}>遲{amS.late}</span>
+                  )}
+                  {amS.pn > 0 && (
+                    <span className="num" style={{ color: "#B8860B", fontWeight: 700 }}>待{amS.pn}</span>
+                  )}
+                </>
+              ) : (
+                <>
+                  <span className="num" style={{ color: "#8B8275" }}>表定{amS.sch}</span>
+                  <span style={{ color: "#8B8275", fontWeight: 600, marginLeft: 4 }}>· 尚未點名</span>
+                </>
               )}
               <span style={{
                 fontSize: 9, fontWeight: 700, padding: "0 3px", borderRadius: 2,
@@ -3954,19 +3981,28 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
             <div className="flex items-center gap-1">
               <Moon size={12} strokeWidth={2.5} style={{ color: "#2E2820" }} />
               <span style={{ color: "#2E2820" }}>午</span>
-              <span className="num" style={{ color: "#1F5C3A", fontWeight: 700 }}>{pmS.on + pmS.bn}</span>
-              <span className="num" style={{ color: "#8B8275" }}>／{pmS.sch + pmS.bn}</span>
-              {pmS.bn > 0 && (
-                <span className="num" style={{ color: "#2F4FA8", fontWeight: 700 }}>+補{pmS.bn}</span>
-              )}
-              {pmS.no > 0 && (
-                <span className="num" style={{ color: "#B23A28", fontWeight: 700 }}>缺{pmS.no}</span>
-              )}
-              {pmS.late > 0 && (
-                <span className="num" style={{ color: "#E07B30", fontWeight: 700 }}>遲{pmS.late}</span>
-              )}
-              {pmS.pn > 0 && (
-                <span className="num" style={{ color: "#B8860B", fontWeight: 700 }}>待{pmS.pn}</span>
+              {pmStarted ? (
+                <>
+                  <span className="num" style={{ color: "#1F5C3A", fontWeight: 700 }}>{pmS.on + pmS.bn}</span>
+                  <span className="num" style={{ color: "#8B8275" }}>／{pmS.sch + pmS.bn}</span>
+                  {pmS.bn > 0 && (
+                    <span className="num" style={{ color: "#2F4FA8", fontWeight: 700 }}>+補{pmS.bn}</span>
+                  )}
+                  {pmS.no > 0 && (
+                    <span className="num" style={{ color: "#B23A28", fontWeight: 700 }}>缺{pmS.no}</span>
+                  )}
+                  {pmS.late > 0 && (
+                    <span className="num" style={{ color: "#E07B30", fontWeight: 700 }}>遲{pmS.late}</span>
+                  )}
+                  {pmS.pn > 0 && (
+                    <span className="num" style={{ color: "#B8860B", fontWeight: 700 }}>待{pmS.pn}</span>
+                  )}
+                </>
+              ) : (
+                <>
+                  <span className="num" style={{ color: "#8B8275" }}>表定{pmS.sch}</span>
+                  <span style={{ color: "#8B8275", fontWeight: 600, marginLeft: 4 }}>· 尚未點名</span>
+                </>
               )}
               <span style={{
                 fontSize: 9, fontWeight: 700, padding: "0 3px", borderRadius: 2,
@@ -4091,8 +4127,8 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
             </div>
           )}
 
-          {/* Pending warning - 待點名提醒 */}
-          {pendingees.length > 0 && (
+          {/* Pending warning - 早訓未點名（只有早訓「有人開始點」才警告剩下的） */}
+          {amStarted && amPendingees.length > 0 && (
             <div style={{
               background: "#F6C53C", padding: "5px 12px",
               borderBottom: "2px solid #D9A82C",
@@ -4102,10 +4138,29 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
             }}>
               <span style={{ fontSize: 12 }}>⚠</span>
               <span style={{ letterSpacing: "0.05em" }}>
-                尚有 <span className="num" style={{ fontSize: 12 }}>{pendingees.length}</span> 位未點名：
+                早訓尚有 <span className="num" style={{ fontSize: 12 }}>{amPendingees.length}</span> 位未點名：
               </span>
               <span style={{ fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {pendingees.map(r => r.name).join("、")}
+                {amPendingees.map(r => r.name).join("、")}
+              </span>
+            </div>
+          )}
+
+          {/* Pending warning - 午訓未點名（只有午訓「有人開始點」才警告剩下的） */}
+          {pmStarted && pmPendingees.length > 0 && (
+            <div style={{
+              background: "#F6C53C", padding: "5px 12px",
+              borderBottom: "2px solid #D9A82C",
+              fontSize: 10, color: "#3D2F00", fontWeight: 700,
+              lineHeight: 1.4,
+              display: "flex", alignItems: "center", gap: 6,
+            }}>
+              <span style={{ fontSize: 12 }}>⚠</span>
+              <span style={{ letterSpacing: "0.05em" }}>
+                午訓尚有 <span className="num" style={{ fontSize: 12 }}>{pmPendingees.length}</span> 位未點名：
+              </span>
+              <span style={{ fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {pmPendingees.map(r => r.name).join("、")}
               </span>
             </div>
           )}
