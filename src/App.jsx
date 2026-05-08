@@ -1820,10 +1820,13 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
   // DEBUG
   if (typeof window !== "undefined") {
     const schPeople = rows.filter(r => r.scheduled).map(r => `${r.seq}${r.name}`);
+    const allRosterPeople = roster.map(r => `${r.seq}${r.name}|${r.sch.join(",")}`);
     console.log("=== 點名分頁 DEBUG ===");
     console.log("日期:", selectedDate, "period:", period, "sessionIdx:", sessionIdx);
     console.log("scheduledTotal:", schPeople.length, schPeople);
-    console.log("總人數:", rows.length);
+    console.log("roster 人數:", roster.length);
+    console.log("roster 前5筆:", allRosterPeople.slice(0, 5));
+    console.log("roster ID:", roster);
   }
   // 實際到場 = 表定到 + 補訓到
   const actualPresent = stats.onTime + stats.bonus;
