@@ -4051,7 +4051,7 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
             fontSize: 11, display: "flex", justifyContent: "space-around",
             flexWrap: "wrap", gap: 8,
           }}>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 flex-wrap">
               <Sun size={12} strokeWidth={2.5} style={{ color: "#2E2820" }} />
               <span style={{ color: "#2E2820" }}>早</span>
               {amStarted ? (
@@ -4070,6 +4070,11 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
                   {amS.pn > 0 && (
                     <span className="num" style={{ color: "#B8860B", fontWeight: 700 }}>待{amS.pn}</span>
                   )}
+                  {amS.bn > 0 && (
+                    <span style={{ color: "#1F5C3A", fontSize: 10, fontWeight: 600, marginLeft: 2 }}>
+                      ＝實到{amS.on + amS.bn}
+                    </span>
+                  )}
                 </>
               ) : (
                 <>
@@ -4082,7 +4087,7 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
                 background: VENUES[amVenue].bg, color: VENUES[amVenue].color, marginLeft: 2,
               }}>📍{VENUES[amVenue].label}</span>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 flex-wrap">
               <Moon size={12} strokeWidth={2.5} style={{ color: "#2E2820" }} />
               <span style={{ color: "#2E2820" }}>午</span>
               {pmStarted ? (
@@ -4100,6 +4105,11 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
                   )}
                   {pmS.pn > 0 && (
                     <span className="num" style={{ color: "#B8860B", fontWeight: 700 }}>待{pmS.pn}</span>
+                  )}
+                  {pmS.bn > 0 && (
+                    <span style={{ color: "#1F5C3A", fontSize: 10, fontWeight: 600, marginLeft: 2 }}>
+                      ＝實到{pmS.on + pmS.bn}
+                    </span>
                   )}
                 </>
               ) : (
