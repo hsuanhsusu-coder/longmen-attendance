@@ -4056,8 +4056,8 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
               <span style={{ color: "#2E2820" }}>早</span>
               {amStarted ? (
                 <>
-                  <span className="num" style={{ color: "#1F5C3A", fontWeight: 700 }}>{amS.on + amS.bn}</span>
-                  <span className="num" style={{ color: "#8B8275" }}>／{amS.sch + amS.bn}</span>
+                  <span className="num" style={{ color: "#1F5C3A", fontWeight: 700 }}>{amS.on}</span>
+                  <span className="num" style={{ color: "#8B8275" }}>／{amS.sch}</span>
                   {amS.bn > 0 && (
                     <span className="num" style={{ color: "#2F4FA8", fontWeight: 700 }}>+補{amS.bn}</span>
                   )}
@@ -4087,8 +4087,8 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
               <span style={{ color: "#2E2820" }}>午</span>
               {pmStarted ? (
                 <>
-                  <span className="num" style={{ color: "#1F5C3A", fontWeight: 700 }}>{pmS.on + pmS.bn}</span>
-                  <span className="num" style={{ color: "#8B8275" }}>／{pmS.sch + pmS.bn}</span>
+                  <span className="num" style={{ color: "#1F5C3A", fontWeight: 700 }}>{pmS.on}</span>
+                  <span className="num" style={{ color: "#8B8275" }}>／{pmS.sch}</span>
                   {pmS.bn > 0 && (
                     <span className="num" style={{ color: "#2F4FA8", fontWeight: 700 }}>+補{pmS.bn}</span>
                   )}
