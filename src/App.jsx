@@ -4070,11 +4070,9 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
                   {amS.pn > 0 && (
                     <span className="num" style={{ color: "#B8860B", fontWeight: 700 }}>待{amS.pn}</span>
                   )}
-                  {amS.bn > 0 && (
-                    <span style={{ color: "#1F5C3A", fontSize: 10, fontWeight: 600, marginLeft: 2 }}>
-                      ＝實到{amS.on + amS.bn}
-                    </span>
-                  )}
+                  <span style={{ color: "#1F5C3A", fontSize: 10, fontWeight: 600, marginLeft: 2 }}>
+                    ＝實到{amS.on + amS.bn}
+                  </span>
                 </>
               ) : (
                 <>
@@ -4106,11 +4104,9 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
                   {pmS.pn > 0 && (
                     <span className="num" style={{ color: "#B8860B", fontWeight: 700 }}>待{pmS.pn}</span>
                   )}
-                  {pmS.bn > 0 && (
-                    <span style={{ color: "#1F5C3A", fontSize: 10, fontWeight: 600, marginLeft: 2 }}>
-                      ＝實到{pmS.on + pmS.bn}
-                    </span>
-                  )}
+                  <span style={{ color: "#1F5C3A", fontSize: 10, fontWeight: 600, marginLeft: 2 }}>
+                    ＝實到{pmS.on + pmS.bn}
+                  </span>
                 </>
               ) : (
                 <>
