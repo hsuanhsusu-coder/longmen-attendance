@@ -1815,8 +1815,15 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
     noShow: rows.filter(r => r.status === "no_show").length,
     pending: rows.filter(r => r.status === "pending").length,
     bonus: rows.filter(r => r.status === "bonus").length,
+    totalRoster: rows.length,
   }), [rows]);
-  const rate = stats.scheduledTotal === 0 ? 0 : Math.round(stats.onTime / stats.scheduledTotal * 100);
+  // 實際到場 = 表定到 + 補訓到
+  const actualPresent = stats.onTime + stats.bonus;
+  // 出席率 = (表定到 + 補訓到) / 表定到
+  // 100% = 表定的人都到了；> 100% = 含補訓超出表定規模
+  const rate = stats.onTime === 0
+    ? null  // 沒有表定到的人 → 顯示 N/A
+    : Math.round(actualPresent / stats.onTime * 100);
 
   // 是否被鎖定（一般教練 / 管理員不能改超過寬限期的舊資料）
   const locked = !canEditDate(selectedDate);
@@ -2220,31 +2227,75 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
       )}
 
       <section className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-        <StatCard tag="SCHEDULED" label="表定出席" value={stats.scheduledTotal} sub="人" color="var(--ink)" />
-        <StatCard tag="PRESENT" label="實際出席" value={stats.onTime} sub={`／ ${stats.scheduledTotal}`} color="var(--green)" bg="var(--green-bg)" />
+        <StatCard tag="SCHEDULED" label="表定出席" value={stats.scheduledTotal} sub={`／ 實到 ${stats.onTime}`} color="var(--ink)" />
+        <StatCard tag="PRESENT" label="實際出席" value={actualPresent}
+                  sub={stats.bonus > 0 ? `${stats.onTime}+補${stats.bonus}` : "人"}
+                  color="var(--green)" bg="var(--green-bg)" />
         <StatCard tag="ABSENT" label="缺席" value={stats.noShow} sub="人" color="var(--red)" bg="var(--red-bg)" alert={stats.noShow > 0} />
-        <StatCard tag="RATE" label="出席率" value={rate} sub="%" color="var(--ink)" ring={rate} />
+        {rate === null ? (
+          <StatCard tag="RATE" label="出席率"
+                    value="—"
+                    sub={stats.bonus > 0 ? `本日無表定到，${stats.bonus} 人補訓` : "本日無到場"}
+                    color="var(--mute)" />
+        ) : (
+          <StatCard tag="RATE" label="出席率" value={rate} sub="%"
+                    color={rate >= 100 ? "var(--green)" : "var(--ink)"}
+                    ring={Math.min(rate, 100)} />
+        )}
       </section>
+
+      {/* 點名進度橫條 */}
+      {(() => {
+        const pointed = stats.scheduledTotal - stats.pending;
+        const allDone = stats.pending === 0;
+        return (
+          <div className="rounded-xl px-3 sm:px-4 py-2 sm:py-2.5 border-2 flex items-center gap-2 sm:gap-3 flex-wrap"
+               style={{
+                 background: allDone ? "var(--green-bg)" : "var(--amber-bg)",
+                 borderColor: allDone ? "var(--green)" : "var(--amber)",
+               }}>
+            <span style={{ color: allDone ? "var(--green)" : "#5C4810", fontWeight: 700, fontSize: 14 }}>
+              {allDone ? "✅" : "⏳"}
+            </span>
+            <span className="text-xs sm:text-sm font-bold" style={{ color: allDone ? "var(--green)" : "#5C4810" }}>
+              點名進度
+            </span>
+            <span className="num text-base sm:text-lg font-bold" style={{ color: allDone ? "var(--green)" : "#5C4810" }}>
+              {pointed} / {stats.scheduledTotal}
+            </span>
+            <span className="flex-1 text-xs sm:text-sm" style={{ color: allDone ? "var(--green)" : "#5C4810" }}>
+              {allDone ? (
+                <>全部表定隊員已點名完畢</>
+              ) : (
+                <>尚有 <span className="num font-bold">{stats.pending}</span> 位表定隊員未點名</>
+              )}
+            </span>
+            {/* 進度條 */}
+            <div style={{
+              width: "min(120px, 30%)", height: 6, borderRadius: 3,
+              background: "rgba(0,0,0,0.08)", overflow: "hidden",
+            }}>
+              <div style={{
+                height: "100%",
+                width: `${stats.scheduledTotal === 0 ? 0 : Math.round(pointed / stats.scheduledTotal * 100)}%`,
+                background: allDone ? "var(--green)" : "var(--amber)",
+                transition: "width 0.3s",
+              }} />
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 整日備註 */}
       <DayNoteSection dayNote={dayNote} setDayNote={setDayNote} locked={locked} />
 
-      {(stats.pending > 0 || stats.bonus > 0) && (
+      {stats.bonus > 0 && (
         <div className="flex flex-wrap gap-2">
-          {stats.pending > 0 && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs sm:text-sm border"
-                 style={{ background: "var(--amber-bg)", borderColor: "var(--amber)", color: "#5C4810" }}>
-              <AlertTriangle size={14} strokeWidth={2.5} />
-              <span className="font-medium">尚有 <span className="num">{stats.pending}</span> 位表定隊員未點名</span>
-            </div>
-          )}
-          {stats.bonus > 0 && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs sm:text-sm border"
-                 style={{ background: "var(--blue-bg)", borderColor: "var(--blue)", color: "var(--blue)" }}>
-              <Sparkles size={14} strokeWidth={2.5} />
-              <span className="font-medium"><span className="num">{stats.bonus}</span> 位補訓出席</span>
-            </div>
-          )}
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs sm:text-sm border"
+               style={{ background: "var(--blue-bg)", borderColor: "var(--blue)", color: "var(--blue)" }}>
+            <Sparkles size={14} strokeWidth={2.5} />
+            <span className="font-medium"><span className="num">{stats.bonus}</span> 位補訓出席</span>
+          </div>
         </div>
       )}
 
@@ -4126,6 +4177,61 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
               ))}
             </div>
           )}
+
+          {/* 點名進度（早 + 午分別顯示） */}
+          {(() => {
+            const amPointed = amS.sch - amS.pn;
+            const pmPointed = pmS.sch - pmS.pn;
+            const amDone = amStarted && amS.pn === 0;
+            const pmDone = pmStarted && pmS.pn === 0;
+            // 兩場都未開始時不顯示這條
+            if (!amStarted && !pmStarted) return null;
+            return (
+              <div style={{
+                background: "#F8F3E8", padding: "6px 12px",
+                borderBottom: "1px solid #DDD3BF",
+                fontSize: 10, fontWeight: 700,
+                display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+              }}>
+                <span style={{ color: "#2E2820", letterSpacing: "0.05em" }}>📋 點名進度</span>
+                {/* 早訓進度 */}
+                {amStarted && (
+                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ color: amDone ? "#1F5C3A" : "#5C4810" }}>
+                      {amDone ? "✓" : "⏳"} 早
+                    </span>
+                    <span className="num" style={{ color: amDone ? "#1F5C3A" : "#5C4810" }}>
+                      {amPointed}/{amS.sch}
+                    </span>
+                    {amDone && <span style={{ color: "#1F5C3A", fontWeight: 600 }}>已完成</span>}
+                  </span>
+                )}
+                {/* 午訓進度 */}
+                {pmStarted && (
+                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ color: pmDone ? "#1F5C3A" : "#5C4810" }}>
+                      {pmDone ? "✓" : "⏳"} 午
+                    </span>
+                    <span className="num" style={{ color: pmDone ? "#1F5C3A" : "#5C4810" }}>
+                      {pmPointed}/{pmS.sch}
+                    </span>
+                    {pmDone && <span style={{ color: "#1F5C3A", fontWeight: 600 }}>已完成</span>}
+                  </span>
+                )}
+                {/* 整體完成 */}
+                {amDone && (pmDone || !pmStarted) && pmStarted === false && (
+                  <span style={{ color: "#1F5C3A", fontWeight: 700, marginLeft: "auto" }}>
+                    早訓已完成
+                  </span>
+                )}
+                {amDone && pmDone && (
+                  <span style={{ color: "#1F5C3A", fontWeight: 700, marginLeft: "auto" }}>
+                    ✅ 兩場皆完成
+                  </span>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Pending warning - 早訓未點名（只有早訓「有人開始點」才警告剩下的） */}
           {amStarted && amPendingees.length > 0 && (
