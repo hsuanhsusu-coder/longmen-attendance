@@ -1819,11 +1819,16 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
   }), [rows]);
   // 實際到場 = 表定到 + 補訓到
   const actualPresent = stats.onTime + stats.bonus;
-  // 出席率 = (表定到 + 補訓到) / 表定到
-  // 100% = 表定的人都到了；> 100% = 含補訓超出表定規模
-  const rate = stats.onTime === 0
-    ? null  // 沒有表定到的人 → 顯示 N/A
-    : Math.round(actualPresent / stats.onTime * 100);
+  // 表定出席率 = 表定到 / 表定總數
+  // 看「該來的有沒有來」，最高 100%
+  const scheduledRate = stats.scheduledTotal === 0
+    ? null
+    : Math.round(stats.onTime / stats.scheduledTotal * 100);
+  // 實際出席率 = (表定到 + 補訓到) / 全隊人數
+  // 看「整隊到場率」
+  const actualRate = rows.length === 0
+    ? null
+    : Math.round(actualPresent / rows.length * 100);
 
   // 是否被鎖定（一般教練 / 管理員不能改超過寬限期的舊資料）
   const locked = !canEditDate(selectedDate);
@@ -2232,16 +2237,55 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
                   sub={stats.bonus > 0 ? `${stats.onTime}+補${stats.bonus}` : "人"}
                   color="var(--green)" bg="var(--green-bg)" />
         <StatCard tag="ABSENT" label="缺席" value={stats.noShow} sub="人" color="var(--red)" bg="var(--red-bg)" alert={stats.noShow > 0} />
-        {rate === null ? (
-          <StatCard tag="RATE" label="出席率"
-                    value="—"
-                    sub={stats.bonus > 0 ? `本日無表定到，${stats.bonus} 人補訓` : "本日無到場"}
-                    color="var(--mute)" />
-        ) : (
-          <StatCard tag="RATE" label="出席率" value={rate} sub="%"
-                    color={rate >= 100 ? "var(--green)" : "var(--ink)"}
-                    ring={Math.min(rate, 100)} />
-        )}
+        {/* RATE 卡片：自訂顯示兩個率 */}
+        <div className="relative rounded-xl border-2 p-3 sm:p-4 flex flex-col"
+             style={{ background: "var(--panel)", borderColor: "var(--ink)" }}>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] tk-l" style={{ color: "var(--mute)", letterSpacing: "0.1em" }}>RATE</span>
+          </div>
+          <div className="text-xs sm:text-sm font-medium mb-2" style={{ color: "var(--ink-2)" }}>
+            出席率
+          </div>
+          {scheduledRate === null && actualRate === null ? (
+            <div className="flex-1 flex items-center justify-center">
+              <span className="text-2xl" style={{ color: "var(--mute)" }}>—</span>
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col gap-1.5 justify-center">
+              {/* 表定出席率 */}
+              <div className="flex items-baseline justify-between">
+                <span className="text-[10px] sm:text-xs" style={{ color: "var(--mute)" }}>表定</span>
+                <span>
+                  <span className="num text-base sm:text-lg font-bold"
+                        style={{ color: scheduledRate !== null && scheduledRate >= 90 ? "var(--green)" : "var(--ink)" }}>
+                    {scheduledRate === null ? "—" : scheduledRate}
+                  </span>
+                  {scheduledRate !== null && (
+                    <span className="text-[10px] ml-0.5" style={{ color: "var(--mute)" }}>%</span>
+                  )}
+                </span>
+              </div>
+              {/* 實際出席率 */}
+              <div className="flex items-baseline justify-between">
+                <span className="text-[10px] sm:text-xs" style={{ color: "var(--mute)" }}>實際</span>
+                <span>
+                  <span className="num text-base sm:text-lg font-bold"
+                        style={{ color: actualRate !== null && actualRate >= 90 ? "var(--green)" : "var(--ink)" }}>
+                    {actualRate === null ? "—" : actualRate}
+                  </span>
+                  {actualRate !== null && (
+                    <span className="text-[10px] ml-0.5" style={{ color: "var(--mute)" }}>%</span>
+                  )}
+                </span>
+              </div>
+              {stats.bonus > 0 && (
+                <div className="text-[9px] sm:text-[10px] text-right" style={{ color: "var(--blue)" }}>
+                  含補訓 +{stats.bonus}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </section>
 
       {/* 點名進度橫條 */}
