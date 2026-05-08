@@ -1817,6 +1817,14 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
     bonus: rows.filter(r => r.status === "bonus").length,
     totalRoster: rows.length,
   }), [rows]);
+  // DEBUG
+  if (typeof window !== "undefined") {
+    const schPeople = rows.filter(r => r.scheduled).map(r => `${r.seq}${r.name}`);
+    console.log("=== 點名分頁 DEBUG ===");
+    console.log("日期:", selectedDate, "period:", period, "sessionIdx:", sessionIdx);
+    console.log("scheduledTotal:", schPeople.length, schPeople);
+    console.log("總人數:", rows.length);
+  }
   // 實際到場 = 表定到 + 補訓到
   const actualPresent = stats.onTime + stats.bonus;
   // 表定出席率 = 表定到 / 表定總數
@@ -3855,6 +3863,16 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
       pmNote: pmNotes[p.seq] || "",
     };
   });
+  // DEBUG: 印出計算詳情（在主控台 F12 看）
+  if (typeof window !== "undefined") {
+    const amSchPeople = rows.filter(r => r.amSch).map(r => `${r.seq}${r.name}`);
+    const pmSchPeople = rows.filter(r => r.pmSch).map(r => `${r.seq}${r.name}`);
+    console.log("=== 截圖 DEBUG ===");
+    console.log("日期:", selectedDate, "amIdx:", dateInfo.amIdx, "pmIdx:", dateInfo.pmIdx);
+    console.log("早訓表定人 (" + amSchPeople.length + "):", amSchPeople);
+    console.log("午訓表定人 (" + pmSchPeople.length + "):", pmSchPeople);
+    console.log("總人數:", rows.length);
+  }
   const cnt = (sel) => rows.filter(sel).length;
   const amS = {
     sch: cnt(r => r.amSch), on: cnt(r => r.amStatus === "on_time"),
