@@ -3096,7 +3096,10 @@ function DailyRow({ m }) {
   };
 
   const allExcused = !m.amSch && !m.pmSch;
-  const dim = allExcused ? 0.55 : 1;
+  // 但如果這天有任何補訓出席（bonus），不要淡色
+  const hasAnyPresent = m.amStatus === "on_time" || m.amStatus === "bonus" ||
+                        m.pmStatus === "on_time" || m.pmStatus === "bonus";
+  const dim = (allExcused && !hasAnyPresent) ? 0.55 : 1;
   const hasNote = !!(m.amNote || m.pmNote);
 
   return (
@@ -3944,6 +3947,10 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
     const hasBonus = m.amStatus === "bonus" || m.pmStatus === "bonus";
     const hasLate = (m.amLate && (m.amStatus === "on_time" || m.amStatus === "bonus")) ||
                     (m.pmLate && (m.pmStatus === "on_time" || m.pmStatus === "bonus"));
+    // 補訓的人不應該淡色
+    const hasAnyPresent = m.amStatus === "on_time" || m.amStatus === "bonus" ||
+                          m.pmStatus === "on_time" || m.pmStatus === "bonus";
+    const dim = (allExcused && !hasAnyPresent) ? 0.5 : 1;
     const hasNote = !!(m.amNote || m.pmNote);
     let rowBg = "transparent";
     if (hasNoShow) rowBg = "#FBEEEA";
@@ -3956,7 +3963,7 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
         alignItems: "center", gap: 4,
         padding: "3px 6px",
         borderBottom: "1px solid #EAE3D4",
-        opacity: allExcused ? 0.5 : 1,
+        opacity: dim,
         background: rowBg,
         // 遲到時用左邊橘條
         boxShadow: hasLate && !hasNoShow ? "inset 3px 0 0 #E07B30" : "none",
