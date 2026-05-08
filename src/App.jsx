@@ -1104,25 +1104,27 @@ function AttendanceApp({ user }) {
   // Screenshot mode: render clean view only
   if (screenshotMode) {
     return (
-      <div className="att-root w-full">
-        <ScreenshotView
-          selectedDate={selectedDate}
-          attendance={attendance}
-          onExit={() => setScreenshotMode(false)}
-          onPrevDay={() => {
-            const idx = TRAINING_DAYS.findIndex(d => d.dateStr === selectedDate);
-            if (idx === -1) return;
-            const ni = (idx - 1 + TRAINING_DAYS.length) % TRAINING_DAYS.length;
-            setSelectedDate(TRAINING_DAYS[ni].dateStr);
-          }}
-          onNextDay={() => {
-            const idx = TRAINING_DAYS.findIndex(d => d.dateStr === selectedDate);
-            if (idx === -1) return;
-            const ni = (idx + 1) % TRAINING_DAYS.length;
-            setSelectedDate(TRAINING_DAYS[ni].dateStr);
-          }}
-        />
-      </div>
+      <RosterContext.Provider value={{ roster, setRoster }}>
+        <div className="att-root w-full">
+          <ScreenshotView
+            selectedDate={selectedDate}
+            attendance={attendance}
+            onExit={() => setScreenshotMode(false)}
+            onPrevDay={() => {
+              const idx = TRAINING_DAYS.findIndex(d => d.dateStr === selectedDate);
+              if (idx === -1) return;
+              const ni = (idx - 1 + TRAINING_DAYS.length) % TRAINING_DAYS.length;
+              setSelectedDate(TRAINING_DAYS[ni].dateStr);
+            }}
+            onNextDay={() => {
+              const idx = TRAINING_DAYS.findIndex(d => d.dateStr === selectedDate);
+              if (idx === -1) return;
+              const ni = (idx + 1) % TRAINING_DAYS.length;
+              setSelectedDate(TRAINING_DAYS[ni].dateStr);
+            }}
+          />
+        </div>
+      </RosterContext.Provider>
     );
   }
 
@@ -1817,17 +1819,6 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
     bonus: rows.filter(r => r.status === "bonus").length,
     totalRoster: rows.length,
   }), [rows]);
-  // DEBUG
-  if (typeof window !== "undefined") {
-    const schPeople = rows.filter(r => r.scheduled).map(r => `${r.seq}${r.name}`);
-    const allRosterPeople = roster.map(r => `${r.seq}${r.name}|${r.sch.join(",")}`);
-    console.log("=== 點名分頁 DEBUG ===");
-    console.log("日期:", selectedDate, "period:", period, "sessionIdx:", sessionIdx);
-    console.log("scheduledTotal:", schPeople.length, schPeople);
-    console.log("roster 人數:", roster.length);
-    console.log("roster 前5筆:", allRosterPeople.slice(0, 5));
-    console.log("roster ID:", roster);
-  }
   // 實際到場 = 表定到 + 補訓到
   const actualPresent = stats.onTime + stats.bonus;
   // 表定出席率 = 表定到 / 表定總數
@@ -3866,16 +3857,6 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
       pmNote: pmNotes[p.seq] || "",
     };
   });
-  // DEBUG: 印出計算詳情（在主控台 F12 看）
-  if (typeof window !== "undefined") {
-    const amSchPeople = rows.filter(r => r.amSch).map(r => `${r.seq}${r.name}`);
-    const pmSchPeople = rows.filter(r => r.pmSch).map(r => `${r.seq}${r.name}`);
-    console.log("=== 截圖 DEBUG ===");
-    console.log("日期:", selectedDate, "amIdx:", dateInfo.amIdx, "pmIdx:", dateInfo.pmIdx);
-    console.log("早訓表定人 (" + amSchPeople.length + "):", amSchPeople);
-    console.log("午訓表定人 (" + pmSchPeople.length + "):", pmSchPeople);
-    console.log("總人數:", rows.length);
-  }
   const cnt = (sel) => rows.filter(sel).length;
   const amS = {
     sch: cnt(r => r.amSch), on: cnt(r => r.amStatus === "on_time"),
