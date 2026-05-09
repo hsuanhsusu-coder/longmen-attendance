@@ -2636,8 +2636,8 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
         )}
       </section>
 
-      {/* 鎖定提示：超過 24 小時且非主管理員 / 或訪客 */}
-      {locked && (
+      {/* 鎖定提示：超過 24 小時且非主管理員（訪客不顯示，避免干擾家長） */}
+      {locked && isAdmin && (
         <div className={"rounded-xl p-3 sm:p-4 border-2 flex items-start gap-3 " + (lockedAlert ? "animate-pulse" : "")}
              style={{
                background: "var(--amber-bg)",
@@ -2645,17 +2645,8 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
              }}>
           <Lock size={18} strokeWidth={2.5} style={{ color: "#5C4810", marginTop: 2, flexShrink: 0 }} />
           <div className="flex-1 text-xs sm:text-sm" style={{ color: "#5C4810" }}>
-            {!isAdmin ? (
-              <>
-                <div className="font-bold mb-0.5">👀 訪客模式（唯讀）</div>
-                <div>你目前以訪客身份檢視，可以看所有資料但不能編輯。如需編輯權限，請聯絡教練。</div>
-              </>
-            ) : (
-              <>
-                <div className="font-bold mb-0.5">此日期已超過編輯期限</div>
-                <div>已過寬限期（訓練日當天 23:59 之後鎖定）。如需修改，請聯絡主管理員。</div>
-              </>
-            )}
+            <div className="font-bold mb-0.5">此日期已超過編輯期限</div>
+            <div>已過寬限期（訓練日當天 23:59 之後鎖定）。如需修改，請聯絡主管理員。</div>
           </div>
         </div>
       )}
@@ -5813,45 +5804,6 @@ function ReadOnlyManagement({ roster, ownerEmail, adminEmails, userEmail }) {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-2xl p-4 sm:p-5 border-2"
-               style={{ background: "var(--amber-bg)", borderColor: "var(--amber)" }}>
-        <div className="flex items-start gap-3">
-          <Eye size={18} strokeWidth={2.5} style={{ color: "#5C4810", marginTop: 2 }} />
-          <div className="flex-1">
-            <div className="font-medium text-sm mb-1" style={{ color: "#5C4810" }}>唯讀模式</div>
-            <p className="text-xs leading-relaxed" style={{ color: "#5C4810" }}>
-              你目前不是管理員，僅能查看名單。如需修改隊員資料或課表，請聯絡管理員新增你：
-            </p>
-            {ownerEmail && (
-              <div className="mt-2 flex items-center gap-1.5">
-                <Crown size={11} strokeWidth={2.5} style={{ color: "#F6C53C" }} />
-                <span className="text-[10px]" style={{ color: "#5C4810" }}>主管理員</span>
-                <span className="num text-[11px] px-2 py-0.5 rounded font-medium"
-                      style={{ background: "#5C4810", color: "#F6EAC4" }}>
-                  {ownerEmail}
-                </span>
-              </div>
-            )}
-            {adminEmails.filter(e => e.toLowerCase() !== (ownerEmail || "").toLowerCase()).length > 0 && (
-              <div className="mt-2">
-                <div className="text-[10px] mb-1" style={{ color: "#5C4810" }}>一般管理員</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {adminEmails.filter(e => e.toLowerCase() !== (ownerEmail || "").toLowerCase()).map(e => (
-                    <span key={e} className="num text-[11px] px-2 py-0.5 rounded font-medium"
-                          style={{ background: "#5C4810", color: "#F6EAC4" }}>
-                      {e}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className="mt-2 text-[11px]" style={{ color: "#5C4810", opacity: 0.7 }}>
-              你的 Email：<span className="num font-medium">{userEmail}</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
 
       <section className="rounded-2xl p-4 sm:p-5 border-2"
                style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
