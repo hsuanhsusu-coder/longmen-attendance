@@ -1651,12 +1651,13 @@ function AttendanceApp({ user }) {
           {tab === "audit" && isOwner && (
             <AuditLogView user={user} logAction={logAction} />
           )}
-          {tab === "calendar_editor" && isAdmin && (
+          {tab === "calendar_editor" && (
             <CalendarEditorView
               attendance={attendance}
               setAttendance={setAttendance}
               logAction={logAction}
               isOwner={isOwner}
+              isAdmin={isAdmin}
             />
           )}
           {tab === "settings" && isOwner && (
@@ -1691,7 +1692,7 @@ function TabBar({ tab, setTab, isOwner, isAdmin }) {
     { k: "rollcall", l: "點名", icon: ClipboardCheck },
     { k: "daily", l: "總覽", icon: ListChecks },
     { k: "monthly", l: "統計", icon: BarChart3 },
-    ...(isAdmin ? [{ k: "calendar_editor", l: "行事曆", icon: CalendarDays }] : []),
+    { k: "calendar_editor", l: "行事曆", icon: CalendarDays },
     { k: "manage", l: "管理", icon: Settings },
     ...(isOwner ? [{ k: "audit", l: "紀錄", icon: History }] : []),
     ...(isOwner ? [{ k: "settings", l: "設定", icon: Settings }] : []),
@@ -7521,7 +7522,7 @@ function MonthLockSection({ attendance, setAttendance, roster, user, logAction }
 }
 
 // ============ CALENDAR EDITOR VIEW ============
-function CalendarEditorView({ attendance, setAttendance, logAction, isOwner }) {
+function CalendarEditorView({ attendance, setAttendance, logAction, isOwner, isAdmin }) {
   const today = new Date();
   const [viewY, setViewY] = useState(today.getFullYear());
   const [viewM, setViewM] = useState(today.getMonth());
@@ -7684,14 +7685,16 @@ function CalendarEditorView({ attendance, setAttendance, logAction, isOwner }) {
           回今天
         </button>
 
-        {/* 提示橫條 */}
-        <div className="mt-3 px-3 py-2 rounded-lg flex items-start gap-2"
-             style={{ background: "var(--accent-bg)", color: "var(--accent-2)" }}>
-          <span className="text-base shrink-0" style={{ marginTop: 1 }}>💡</span>
-          <div className="text-[11px] sm:text-xs leading-relaxed">
-            點任一格可編輯該日場地與備註。已有點名的日期會顯示 🔒，需要確認才能改。
+        {/* 提示橫條 - 只給管理員看 */}
+        {isAdmin && (
+          <div className="mt-3 px-3 py-2 rounded-lg flex items-start gap-2"
+               style={{ background: "var(--accent-bg)", color: "var(--accent-2)" }}>
+            <span className="text-base shrink-0" style={{ marginTop: 1 }}>💡</span>
+            <div className="text-[11px] sm:text-xs leading-relaxed">
+              點任一格可編輯該日場地與備註。已有點名的日期會顯示 🔒，需要確認才能改。
+            </div>
           </div>
-        </div>
+        )}
 
         {/* 圖例 */}
         <div className="mt-2 flex items-center gap-3 flex-wrap text-[11px]" style={{ color: "var(--mute)" }}>
@@ -7758,13 +7761,13 @@ function CalendarEditorView({ attendance, setAttendance, logAction, isOwner }) {
 
             return (
               <button key={i}
-                      onClick={() => openEdit(dateStr)}
+                      onClick={() => isAdmin && openEdit(dateStr)}
                       className="btn-tactile relative rounded-lg p-1.5 sm:p-2 text-left flex flex-col"
                       style={{
                         background: bg,
                         border: isToday ? `2px solid var(--accent)` : isEmpty ? `1px dashed var(--line-strong)` : `1px solid ${bd}`,
                         minHeight: 70,
-                        cursor: "pointer",
+                        cursor: isAdmin ? "pointer" : "default",
                         opacity: isAllClosed && !isEmpty ? 0.85 : 1,
                       }}>
                 {/* 日期數字 */}
