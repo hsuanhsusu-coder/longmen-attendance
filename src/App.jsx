@@ -5215,13 +5215,13 @@ function PendingApprovalScreen({ user, config, setConfig, isPending, ownerEmail 
             // 已申請 / 等候中
             <div>
               <div className="rounded-lg p-4 mb-3 border-2"
-                   style={{ background: "var(--amber-bg)", borderColor: "var(--amber)" }}>
+                   style={{ background: "var(--green-bg)", borderColor: "var(--green)" }}>
                 <div className="flex items-start gap-2">
-                  <Clock size={16} strokeWidth={2.5} style={{ color: "#5C4810", marginTop: 2 }} />
-                  <div className="text-xs sm:text-sm" style={{ color: "#5C4810" }}>
-                    <div className="font-bold mb-1">⏳ 申請已送出，等候管理員審核</div>
-                    <div>核准後重新整理頁面即可進入。</div>
-                    <div className="mt-1 opacity-80">如需快速審核，請主動聯絡教練。</div>
+                  <Check size={16} strokeWidth={2.5} style={{ color: "var(--green)", marginTop: 2 }} />
+                  <div className="text-xs sm:text-sm" style={{ color: "var(--green)" }}>
+                    <div className="font-bold mb-1 text-sm sm:text-base">✓ 已收到申請，審核中</div>
+                    <div>管理員核准後，重新整理頁面即可進入系統。</div>
+                    <div className="mt-1 opacity-80">如需加快審核，請主動聯絡教練。</div>
                   </div>
                 </div>
               </div>
@@ -5253,10 +5253,10 @@ function PendingApprovalScreen({ user, config, setConfig, isPending, ownerEmail 
 
               <div className="mb-4">
                 <div className="text-[11px] tk-l mb-1" style={{ color: "var(--mute)" }}>
-                  與球隊關係（選填）
+                  與泳隊關係（選填）
                 </div>
                 <input type="text" value={reason} onChange={e => setReason(e.target.value)}
-                       placeholder="例：07 號呂紹宇的家長"
+                       placeholder="例：小鳳梨的家長"
                        className="w-full px-3 py-2 rounded-md border-2 text-sm"
                        style={{ borderColor: "var(--line)", background: "var(--bg)" }} />
               </div>
