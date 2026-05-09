@@ -823,7 +823,8 @@ function AttendanceApp({ user }) {
     const wb = XLSX.utils.book_new();
 
     // ========== Sheet 1: 個人匯總 ==========
-    const personData = roster.map(p => {
+    // 按序號排序（依名冊順序，方便家長/教練查找）
+    const personData = [...roster].sort((a, b) => a.seq - b.seq).map(p => {
       let scheduled = 0, present = 0, absent = 0, pending = 0, late = 0, bonus = 0;
       let yyAm = 0, yyPm = 0;
       let soloAm = 0, soloPm = 0;  // 個練計數
@@ -945,6 +946,8 @@ function AttendanceApp({ user }) {
     XLSX.utils.book_append_sheet(wb, ws1, "個人匯總");
 
     // ========== Sheet 2: 場次彙整 ==========
+    // 在每場次內，隊員按序號排序
+    const sortedRoster = [...roster].sort((a, b) => a.seq - b.seq);
     const sessionData = [];
     TRAINING_DAYS.forEach(day => {
       const dayData = attendance[day.dateStr] || {};
@@ -954,7 +957,7 @@ function AttendanceApp({ user }) {
         const lateSlot = dayData[per === "am" ? "am_late" : "pm_late"] || {};
         const venue = getVenue(attendance, day.dateStr, per);
         let sch = 0, on = 0, no = 0, pn = 0, bn = 0, lt = 0, yyOn = 0, yyPaid = 0, soloCnt = 0;
-        roster.forEach(p => {
+        sortedRoster.forEach(p => {
           const isSch = p.sch[idx] === 1;
           const ac = slot[p.seq];
           const isLate = !!lateSlot[p.seq];
@@ -1028,6 +1031,7 @@ function AttendanceApp({ user }) {
     XLSX.utils.book_append_sheet(wb, ws2, "場次彙整");
 
     // ========== Sheet 3: 完整紀錄 ==========
+    // 在每場次內，隊員按序號排序（sortedRoster 已在 Sheet 2 定義）
     const fullData = [];
     TRAINING_DAYS.forEach(day => {
       const dayData = attendance[day.dateStr] || {};
@@ -1039,7 +1043,7 @@ function AttendanceApp({ user }) {
         const soloSlot = dayData[per === "am" ? "am_solo" : "pm_solo"] || {};
         const venue = getVenue(attendance, day.dateStr, per);
         const isYy = venue === "yongyun";
-        roster.forEach(p => {
+        sortedRoster.forEach(p => {
           const sch = p.sch[idx] === 1;
           const ac = slot[p.seq];
           const isLate = !!lateSlot[p.seq];
