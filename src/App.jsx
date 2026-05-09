@@ -1688,28 +1688,30 @@ function AttendanceApp({ user }) {
 function TabBar({ tab, setTab, isOwner, isAdmin }) {
   const tabs = [
     { k: "rollcall", l: "點名", icon: ClipboardCheck },
-    { k: "daily", l: "每日總覽", icon: ListChecks },
-    { k: "monthly", l: "當月統計", icon: BarChart3 },
+    { k: "daily", l: "總覽", icon: ListChecks },
+    { k: "monthly", l: "統計", icon: BarChart3 },
     ...(isAdmin ? [{ k: "calendar_editor", l: "行事曆", icon: CalendarDays }] : []),
     { k: "manage", l: "管理", icon: Settings },
     ...(isOwner ? [{ k: "audit", l: "紀錄", icon: History }] : []),
     ...(isOwner ? [{ k: "settings", l: "設定", icon: Settings }] : []),
   ];
   return (
-    <div className="flex gap-1 mb-4 p-1 rounded-2xl border-2"
+    <div className="flex gap-1 mb-4 p-1 rounded-2xl border-2 overflow-x-auto"
          style={{ borderColor: "var(--ink)", background: "var(--panel)" }}>
       {tabs.map(t => {
         const active = tab === t.k;
         const Ic = t.icon;
         return (
           <button key={t.k} onClick={() => setTab(t.k)}
-                  className="btn-tactile flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-sm sm:text-base font-medium"
+                  className="btn-tactile flex-1 flex items-center justify-center gap-1 px-1.5 sm:px-3 py-2 rounded-xl text-[12px] sm:text-base font-medium whitespace-nowrap min-w-0"
                   style={{
                     background: active ? "var(--ink)" : "transparent",
                     color: active ? "var(--bg)" : "var(--ink-2)",
+                    flexShrink: 0,
+                    minWidth: "fit-content",
                   }}>
-            <Ic size={16} strokeWidth={2.5} />
-            {t.l}
+            <Ic size={14} strokeWidth={2.5} className="flex-shrink-0" />
+            <span>{t.l}</span>
           </button>
         );
       })}
@@ -5896,8 +5898,23 @@ function PendingApprovalSection({ config, setConfig, user, logAction }) {
   const pending = config.pending || [];
   const [confirmReject, setConfirmReject] = useState(null);
 
+  // DEBUG: 主控台印 + 強制顯示提示
+  console.log("[DEBUG PendingApprovalSection] config.pending =", config.pending);
+  console.log("[DEBUG] pending.length =", pending.length);
+
   if (pending.length === 0) {
-    return null;  // 沒有待審核就不顯示
+    // 仍顯示「目前沒有」的提示，讓主管理員知道功能正常運作
+    return (
+      <section className="rounded-2xl p-4 sm:p-5 border-2"
+               style={{ background: "var(--panel-2)", borderColor: "var(--line)" }}>
+        <div className="text-[10px] tk-x mb-1" style={{ color: "var(--mute)" }}>
+          PENDING APPROVAL · 待審核申請
+        </div>
+        <div className="text-sm" style={{ color: "var(--mute)" }}>
+          ✓ 目前沒有待審核的申請
+        </div>
+      </section>
+    );
   }
 
   const approve = (entry) => {
