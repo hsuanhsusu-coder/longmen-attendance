@@ -22,7 +22,7 @@ const DEFAULT_ROSTER = [
   { seq: 5,  cls: 913, num: 26, name: "洪禮揚", grade: 9, sch: [1,1,0,0,0,0,1,1,0,0,0,1] },
   { seq: 6,  cls: 802, num: 11, name: "楊霈妮", grade: 8, sch: [1,1,0,0,1,1,0,0,1,1,0,0] },
   { seq: 7,  cls: 803, num: 23, name: "呂紹宇", grade: 8, sch: [1,1,0,0,1,1,0,0,1,1,0,0] },
-  { seq: 8,  cls: 804, num: 16, name: "蔡萬潼", grade: 8, sch: [1,0,0,0,1,1,0,0,1,1,0,0] },
+  { seq: 8,  cls: 804, num: 16, name: "蔡萭潼", grade: 8, sch: [1,0,0,0,1,1,0,0,1,1,0,0] },
   { seq: 9,  cls: 810, num: 35, name: "鄭宇廷", grade: 8, sch: [1,1,0,0,1,1,0,0,0,0,0,0] },
   { seq: 10, cls: 812, num: 31, name: "楊立傳", grade: 8, sch: [1,1,0,0,1,1,0,0,0,0,0,0] },
   { seq: 11, cls: 812, num: 32, name: "楊立楷", grade: 8, sch: [1,1,0,0,1,1,0,0,0,0,0,0] },
@@ -1084,8 +1084,13 @@ function AttendanceApp({ user }) {
   const userEmail = (user.email || "").toLowerCase();
   const ownerEmail = (config.owner || "").toLowerCase();
   const adminList = (config.admins || []).map(e => (e || "").toLowerCase());
+  const viewerList = (config.viewers || []).map(e => (e || "").toLowerCase());
+  const pendingList = (config.pending || []).map(p => (p?.email || "").toLowerCase());
   const isOwner = ownerEmail === userEmail;
   const isAdmin = isOwner || adminList.includes(userEmail);
+  const isViewer = viewerList.includes(userEmail);
+  const isApproved = isAdmin || isViewer;  // 管理員或已核准訪客
+  const isPending = pendingList.includes(userEmail);
   const noAdminsYet = configLoaded && !ownerEmail && adminList.length === 0;
 
   // === 24 小時寬限期：判斷某個日期是否還可以被一般管理員修改 ===
@@ -1493,6 +1498,21 @@ function AttendanceApp({ user }) {
     XLSX.writeFile(wb, `龍門泳隊_${Y}年${M + 1}月報表.xlsx`);
   };
 
+  // === 訪客審核機制 ===
+  // 如果尚未核准 (非 owner、admin、viewer) 且 config 已載入 → 顯示等候畫面
+  // 例外：noAdminsYet 時不擋（讓初始化能進行）
+  if (configLoaded && !noAdminsYet && !isApproved) {
+    return (
+      <PendingApprovalScreen
+        user={user}
+        config={config}
+        setConfig={setConfig}
+        isPending={isPending}
+        ownerEmail={ownerEmail}
+      />
+    );
+  }
+
   // Screenshot mode: render clean view only
   if (screenshotMode) {
     return (
@@ -1577,13 +1597,15 @@ function AttendanceApp({ user }) {
                 <Camera size={16} strokeWidth={2.5} />
                 截圖模式（傳給老師）
               </button>
-              <button onClick={exportAll}
-                      className="btn-tactile w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-lg border-2 font-medium"
-                      style={{ borderColor: "var(--accent-2)", background: "var(--accent-2)", color: "var(--bg)" }}
-                      title="匯出 Excel 三分頁：個人匯總 / 場次彙整 / 完整紀錄">
-                <Download size={16} strokeWidth={2.5} />
-                匯出全月報表
-              </button>
+              {isAdmin && (
+                <button onClick={exportAll}
+                        className="btn-tactile w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-lg border-2 font-medium"
+                        style={{ borderColor: "var(--accent-2)", background: "var(--accent-2)", color: "var(--bg)" }}
+                        title="匯出 Excel 三分頁：個人匯總 / 場次彙整 / 完整紀錄">
+                  <Download size={16} strokeWidth={2.5} />
+                  匯出全月報表
+                </button>
+              )}
             </div>
           </div>
         </header>
@@ -1612,7 +1634,7 @@ function AttendanceApp({ user }) {
           )}
           {tab === "monthly" && (
             <MonthlyView attendance={attendance} setSelectedDate={setSelectedDate} setTab={setTab}
-                         Y={Y} M={M} TRAINING_DAYS={TRAINING_DAYS} />
+                         Y={Y} M={M} TRAINING_DAYS={TRAINING_DAYS} isAdmin={isAdmin} />
           )}
           {tab === "manage" && (
             <ManagementView
@@ -2612,7 +2634,7 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
         )}
       </section>
 
-      {/* 鎖定提示：超過 24 小時且非主管理員 */}
+      {/* 鎖定提示：超過 24 小時且非主管理員 / 或訪客 */}
       {locked && (
         <div className={"rounded-xl p-3 sm:p-4 border-2 flex items-start gap-3 " + (lockedAlert ? "animate-pulse" : "")}
              style={{
@@ -2621,8 +2643,17 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
              }}>
           <Lock size={18} strokeWidth={2.5} style={{ color: "#5C4810", marginTop: 2, flexShrink: 0 }} />
           <div className="flex-1 text-xs sm:text-sm" style={{ color: "#5C4810" }}>
-            <div className="font-bold mb-0.5">此日期已超過編輯期限</div>
-            <div>已過寬限期（訓練日當天 23:59 之後鎖定）。如需修改，請聯絡主管理員。</div>
+            {!isAdmin ? (
+              <>
+                <div className="font-bold mb-0.5">👀 訪客模式（唯讀）</div>
+                <div>你目前以訪客身份檢視，可以看所有資料但不能編輯。如需編輯權限，請聯絡教練。</div>
+              </>
+            ) : (
+              <>
+                <div className="font-bold mb-0.5">此日期已超過編輯期限</div>
+                <div>已過寬限期（訓練日當天 23:59 之後鎖定）。如需修改，請聯絡主管理員。</div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -3550,7 +3581,7 @@ function DailyRow({ m }) {
 }
 
 // ============ MONTHLY VIEW ============
-function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS }) {
+function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS, isAdmin }) {
   const { roster } = useRoster();
   const personStats = useMemo(() => roster.map(p => {
     let scheduled = 0, present = 0, absent = 0, bonus = 0, pending = 0, late = 0;
@@ -3764,6 +3795,7 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS 
         personStats={personStats}
         TRAINING_DAYS={TRAINING_DAYS}
         attendance={attendance}
+        isAdmin={isAdmin}
       />
 
       <section className="rounded-xl p-3 sm:p-4 border"
@@ -3815,7 +3847,7 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS 
   );
 }
 
-function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendance }) {
+function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendance, isAdmin }) {
   const [expanded, setExpanded] = useState(false);
   // 應收名單：有應收費用的人（排除整月都個練的人）
   // 應收清單：所有隊員都列出（依名冊順序），沒永運費的顯示 0
@@ -4017,12 +4049,14 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
             <span>{expanded ? "▾" : "▸"}</span>
             {expanded ? "收起明細" : "展開明細"}
           </button>
-          <button onClick={exportFee}
-                  className="btn-tactile flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium"
-                  style={{ background: VENUES.yongyun.color, color: "#fff" }}>
-            <Download size={12} strokeWidth={2.5} />
-            匯出 Excel
-          </button>
+          {isAdmin && (
+            <button onClick={exportFee}
+                    className="btn-tactile flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium"
+                    style={{ background: VENUES.yongyun.color, color: "#fff" }}>
+              <Download size={12} strokeWidth={2.5} />
+              匯出 Excel
+            </button>
+          )}
         </div>
       </div>
 
@@ -5091,6 +5125,167 @@ function GoogleIcon() {
   );
 }
 
+function PendingApprovalScreen({ user, config, setConfig, isPending, ownerEmail }) {
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [name, setName] = useState(user.displayName || "");
+  const [reason, setReason] = useState("");
+
+  // Inject CSS
+  useEffect(() => {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "https://fonts.googleapis.com/css2?family=Anton&family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap";
+    document.head.appendChild(link);
+    const style = document.createElement("style");
+    style.innerHTML = CSS;
+    document.head.appendChild(style);
+    return () => {
+      try { document.head.removeChild(link); } catch (e) {}
+      try { document.head.removeChild(style); } catch (e) {}
+    };
+  }, []);
+
+  const submitRequest = async () => {
+    if (!name.trim()) return;
+    setSubmitting(true);
+    try {
+      const newPending = [
+        ...(config.pending || []).filter(p => (p.email || "").toLowerCase() !== user.email.toLowerCase()),
+        {
+          email: user.email.toLowerCase(),
+          name: name.trim(),
+          reason: reason.trim(),
+          requestedAt: Date.now(),
+          displayName: user.displayName || "",
+          photoURL: user.photoURL || "",
+        },
+      ];
+      setConfig({ ...config, pending: newPending });
+      setSubmitted(true);
+    } catch (e) {
+      console.error("Submit request failed:", e);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="att-root w-full min-h-screen flex items-center justify-center px-4 py-8">
+      <div className="max-w-md w-full">
+        <div className="text-center mb-8">
+          <div className="flex justify-center mb-4">
+            <TeamBadge size={120} />
+          </div>
+          <div className="display-cn text-2xl sm:text-3xl mb-2" style={{ color: "var(--ink)" }}>
+            龍門國中泳隊
+          </div>
+          <div className="text-xs tk-x" style={{ color: "var(--mute)" }}>
+            LONGMEN JUNIOR HIGH · SWIM TEAM
+          </div>
+        </div>
+
+        {/* 已登入但未授權 */}
+        <div className="rounded-2xl p-5 sm:p-6 border-2 mb-4"
+             style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
+          {/* 使用者卡 */}
+          <div className="flex items-center gap-3 mb-4 px-3 py-2 rounded-lg"
+               style={{ background: "var(--panel-2)" }}>
+            {user.photoURL ? (
+              <img src={user.photoURL} alt="" className="w-10 h-10 rounded-full" />
+            ) : (
+              <div className="w-10 h-10 rounded-full flex items-center justify-center"
+                   style={{ background: "var(--line)" }}>
+                <User size={18} strokeWidth={2} style={{ color: "var(--mute)" }} />
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium truncate" style={{ color: "var(--ink)" }}>
+                {user.displayName || "登入帳號"}
+              </div>
+              <div className="text-xs num truncate" style={{ color: "var(--mute)" }}>
+                {user.email}
+              </div>
+            </div>
+          </div>
+
+          {submitted || isPending ? (
+            // 已申請 / 等候中
+            <div>
+              <div className="rounded-lg p-4 mb-3 border-2"
+                   style={{ background: "var(--amber-bg)", borderColor: "var(--amber)" }}>
+                <div className="flex items-start gap-2">
+                  <Clock size={16} strokeWidth={2.5} style={{ color: "#5C4810", marginTop: 2 }} />
+                  <div className="text-xs sm:text-sm" style={{ color: "#5C4810" }}>
+                    <div className="font-bold mb-1">⏳ 申請已送出，等候管理員審核</div>
+                    <div>核准後重新整理頁面即可進入。</div>
+                    <div className="mt-1 opacity-80">如需快速審核，請主動聯絡教練。</div>
+                  </div>
+                </div>
+              </div>
+              {ownerEmail && (
+                <div className="text-[11px] mb-3 text-center" style={{ color: "var(--mute)" }}>
+                  主管理員：<span className="num">{ownerEmail}</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            // 第一次：填表單
+            <div>
+              <div className="rounded-lg p-3 mb-4"
+                   style={{ background: "var(--accent-bg)", border: "1px solid var(--accent)" }}>
+                <div className="text-xs leading-relaxed" style={{ color: "var(--accent-2)" }}>
+                  🔒 此系統僅限授權人員存取。請填寫資料以申請存取權限。
+                </div>
+              </div>
+
+              <div className="mb-3">
+                <div className="text-[11px] tk-l mb-1" style={{ color: "var(--mute)" }}>
+                  姓名 <span style={{ color: "var(--red)" }}>*</span>
+                </div>
+                <input type="text" value={name} onChange={e => setName(e.target.value)}
+                       placeholder="王小明（家長）/ 李教練"
+                       className="w-full px-3 py-2 rounded-md border-2 text-sm"
+                       style={{ borderColor: "var(--line)", background: "var(--bg)" }} />
+              </div>
+
+              <div className="mb-4">
+                <div className="text-[11px] tk-l mb-1" style={{ color: "var(--mute)" }}>
+                  與球隊關係（選填）
+                </div>
+                <input type="text" value={reason} onChange={e => setReason(e.target.value)}
+                       placeholder="例：07 號呂紹宇的家長"
+                       className="w-full px-3 py-2 rounded-md border-2 text-sm"
+                       style={{ borderColor: "var(--line)", background: "var(--bg)" }} />
+              </div>
+
+              <button onClick={submitRequest}
+                      disabled={!name.trim() || submitting}
+                      className="btn-tactile w-full px-4 py-3 rounded-lg font-medium"
+                      style={{
+                        background: name.trim() && !submitting ? "var(--accent-2)" : "var(--line)",
+                        color: name.trim() && !submitting ? "#fff" : "var(--mute)",
+                      }}>
+                {submitting ? "送出中..." : "📨 送出申請"}
+              </button>
+            </div>
+          )}
+
+          <button onClick={() => signOut(auth)}
+                  className="btn-tactile w-full mt-3 px-4 py-2 rounded-lg text-sm border-2"
+                  style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)", background: "var(--panel)" }}>
+            登出此帳號
+          </button>
+        </div>
+
+        <div className="text-center text-[10px] tk-l" style={{ color: "var(--mute)" }}>
+          BUILT FOR DAILY ROLL-CALL · 2026
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LoadingSpinner() {
   return (
     <div className="flex flex-col items-center gap-3">
@@ -5396,9 +5591,19 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
         </div>
       )}
 
+      {/* 待審核申請（owner 才能看） */}
+      {isOwner && (
+        <PendingApprovalSection config={config} setConfig={setConfig}
+                                 user={user} logAction={logAction} />
+      )}
+
       {/* Admin section */}
       <AdminListSection user={user} config={config} setConfig={setConfig}
                          isOwner={isOwner} logAction={logAction} />
+
+      {/* Viewers section */}
+      <ViewerListSection config={config} setConfig={setConfig}
+                          user={user} isOwner={isOwner} logAction={logAction} />
 
       {/* Header */}
       <section className="rounded-2xl p-4 sm:p-5 border-2"
@@ -5684,6 +5889,188 @@ function ReadOnlyManagement({ roster, ownerEmail, adminEmails, userEmail }) {
         </section>
       ))}
     </div>
+  );
+}
+
+function PendingApprovalSection({ config, setConfig, user, logAction }) {
+  const pending = config.pending || [];
+  const [confirmReject, setConfirmReject] = useState(null);
+
+  if (pending.length === 0) {
+    return null;  // 沒有待審核就不顯示
+  }
+
+  const approve = (entry) => {
+    const newPending = pending.filter(p => p.email !== entry.email);
+    const newViewers = [...(config.viewers || []), entry.email];
+    setConfig({ ...config, pending: newPending, viewers: newViewers });
+    if (logAction) {
+      logAction("approve_viewer", {
+        target: entry.email,
+        targetLabel: `核准訪客 - ${entry.name}（${entry.email}）`,
+      });
+    }
+  };
+
+  const reject = (entry) => {
+    const newPending = pending.filter(p => p.email !== entry.email);
+    setConfig({ ...config, pending: newPending });
+    if (logAction) {
+      logAction("reject_viewer", {
+        target: entry.email,
+        targetLabel: `拒絕訪客 - ${entry.name}（${entry.email}）`,
+      });
+    }
+    setConfirmReject(null);
+  };
+
+  return (
+    <section className="rounded-2xl p-4 sm:p-5 border-2"
+             style={{ background: "var(--amber-bg)", borderColor: "var(--amber)" }}>
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <div className="text-[10px] tk-x mb-1" style={{ color: "#5C4810" }}>
+            PENDING APPROVAL · 待審核申請
+          </div>
+          <div className="display-cn text-lg" style={{ color: "#5C4810" }}>
+            <span className="num">{pending.length}</span> 位等候審核
+          </div>
+        </div>
+        <span style={{ fontSize: 24 }}>⏳</span>
+      </div>
+
+      <div className="space-y-2">
+        {pending.map(entry => (
+          <div key={entry.email} className="rounded-lg p-3 flex items-start gap-3"
+               style={{ background: "var(--panel)", border: "1px solid var(--amber)" }}>
+            {entry.photoURL ? (
+              <img src={entry.photoURL} alt="" className="w-10 h-10 rounded-full flex-shrink-0" />
+            ) : (
+              <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+                   style={{ background: "var(--line)" }}>
+                <User size={16} strokeWidth={2} style={{ color: "var(--mute)" }} />
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="font-medium text-sm" style={{ color: "var(--ink)" }}>
+                {entry.name}
+              </div>
+              <div className="text-[11px] num truncate" style={{ color: "var(--mute)" }}>
+                {entry.email}
+              </div>
+              {entry.reason && (
+                <div className="text-xs mt-1" style={{ color: "var(--ink-2)" }}>
+                  {entry.reason}
+                </div>
+              )}
+              <div className="text-[10px] mt-1" style={{ color: "var(--mute)" }}>
+                申請於 {new Date(entry.requestedAt).toLocaleString("zh-TW")}
+              </div>
+            </div>
+            <div className="flex flex-col gap-1.5 flex-shrink-0">
+              <button onClick={() => approve(entry)}
+                      className="btn-tactile px-3 py-1.5 rounded-md text-xs font-medium"
+                      style={{ background: "var(--green)", color: "#fff" }}>
+                ✓ 通過
+              </button>
+              {confirmReject === entry.email ? (
+                <div className="flex gap-1">
+                  <button onClick={() => setConfirmReject(null)}
+                          className="btn-tactile px-2 py-1 rounded-md text-[10px] border"
+                          style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+                    取消
+                  </button>
+                  <button onClick={() => reject(entry)}
+                          className="btn-tactile px-2 py-1 rounded-md text-[10px] font-medium"
+                          style={{ background: "var(--red)", color: "#fff" }}>
+                    確認拒絕
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => setConfirmReject(entry.email)}
+                        className="btn-tactile px-3 py-1.5 rounded-md text-xs border-2"
+                        style={{ borderColor: "var(--red)", color: "var(--red)", background: "var(--panel)" }}>
+                  ✕ 拒絕
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="text-[10px] mt-3" style={{ color: "#5C4810" }}>
+        💡 通過 = 加入訪客清單（可看，但不能編輯）｜拒絕 = 從待審核清單移除（可重新申請）
+      </div>
+    </section>
+  );
+}
+
+function ViewerListSection({ config, setConfig, user, isOwner, logAction }) {
+  const viewers = config.viewers || [];
+  const [confirmRemove, setConfirmRemove] = useState(null);
+
+  if (viewers.length === 0) return null;
+
+  const remove = (email) => {
+    const newViewers = viewers.filter(v => v !== email);
+    setConfig({ ...config, viewers: newViewers });
+    if (logAction) {
+      logAction("remove_viewer", {
+        target: email,
+        targetLabel: `移除訪客 - ${email}`,
+      });
+    }
+    setConfirmRemove(null);
+  };
+
+  return (
+    <section className="rounded-2xl p-4 sm:p-5 border-2"
+             style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <div className="text-[10px] tk-x mb-1" style={{ color: "var(--mute)" }}>
+            VIEWERS · 訪客清單（可看不能編輯）
+          </div>
+          <div className="display-cn text-lg" style={{ color: "var(--ink)" }}>
+            共 <span className="num">{viewers.length}</span> 位
+          </div>
+        </div>
+        <span style={{ fontSize: 22 }}>👀</span>
+      </div>
+      <div className="space-y-1.5">
+        {viewers.map(email => (
+          <div key={email} className="flex items-center gap-2 px-3 py-2 rounded-lg"
+               style={{ background: "var(--bg)", border: "1px solid var(--line)" }}>
+            <User size={13} strokeWidth={2.5} style={{ color: "var(--mute)" }} />
+            <span className="num text-sm flex-1 break-all" style={{ color: "var(--ink-2)" }}>
+              {email}
+            </span>
+            {isOwner && (
+              confirmRemove === email ? (
+                <div className="flex gap-1">
+                  <button onClick={() => setConfirmRemove(null)}
+                          className="btn-tactile px-2 py-1 rounded-md text-[10px] border"
+                          style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+                    取消
+                  </button>
+                  <button onClick={() => remove(email)}
+                          className="btn-tactile px-2 py-1 rounded-md text-[10px] font-medium"
+                          style={{ background: "var(--red)", color: "#fff" }}>
+                    確認移除
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => setConfirmRemove(email)}
+                        className="btn-tactile w-7 h-7 rounded-md flex items-center justify-center"
+                        style={{ background: "var(--panel-2)", color: "var(--mute)" }}>
+                  <X size={12} strokeWidth={2.5} />
+                </button>
+              )
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -6370,6 +6757,10 @@ const ACTION_LABELS = {
   promote_grade: "🎓 升年級",
   lock_month: "🔒 鎖定月份",
   unlock_month: "🔓 解鎖月份",
+  approve_viewer: "✓ 核准訪客",
+  reject_viewer: "✕ 拒絕訪客",
+  remove_viewer: "🗑 移除訪客",
+  request_access: "📨 申請存取",
 };
 
 function AuditLogRow({ log }) {
