@@ -3389,10 +3389,11 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS 
 function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendance }) {
   const [expanded, setExpanded] = useState(false);
   // 應收名單：有應收費用的人（排除整月都個練的人）
+  // 應收清單：所有隊員都列出（依名冊順序），沒永運費的顯示 0
   const paidList = useMemo(() =>
-    [...personStats].filter(s => s.yyPaid > 0).sort((a, b) => a.seq - b.seq),
+    [...personStats].sort((a, b) => a.seq - b.seq),
     [personStats]);
-  // 個練名單：有個練場次的人
+  // 個練名單：有個練場次的人（這個保持只列有的）
   const soloList = useMemo(() =>
     [...personStats].filter(s => s.soloTotal > 0).sort((a, b) => a.seq - b.seq),
     [personStats]);
@@ -3570,31 +3571,35 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
                 <span className="text-center">應收場</span>
                 <span className="text-right">費用</span>
               </div>
-              {paidList.map(s => (
-                <div key={s.seq} className="grid items-center gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm"
-                     style={{
-                       gridTemplateColumns: "32px 1fr 50px 50px 60px 70px",
-                       borderBottom: "1px solid rgba(168, 85, 24, 0.15)",
-                     }}>
-                  <span className="num text-[11px]" style={{ color: VENUES.yongyun.color, opacity: 0.7 }}>
-                    {pad(s.seq)}
-                  </span>
-                  <div className="min-w-0">
-                    <div className="font-medium truncate" style={{ color: "var(--ink)" }}>{s.name}</div>
-                    <div className="num text-[10px]" style={{ color: VENUES.yongyun.color, opacity: 0.7 }}>
-                      {s.cls}-{pad(s.num)}
+              {paidList.map(s => {
+                const noFee = s.yyPaid === 0;
+                return (
+                  <div key={s.seq} className="grid items-center gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm"
+                       style={{
+                         gridTemplateColumns: "32px 1fr 50px 50px 60px 70px",
+                         borderBottom: "1px solid rgba(168, 85, 24, 0.15)",
+                         opacity: noFee ? 0.45 : 1,
+                       }}>
+                    <span className="num text-[11px]" style={{ color: VENUES.yongyun.color, opacity: 0.7 }}>
+                      {pad(s.seq)}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="font-medium truncate" style={{ color: "var(--ink)" }}>{s.name}</div>
+                      <div className="num text-[10px]" style={{ color: VENUES.yongyun.color, opacity: 0.7 }}>
+                        {s.cls}-{pad(s.num)}
+                      </div>
                     </div>
+                    <span className="num text-center" style={{ color: "var(--ink-2)" }}>{s.yyAmPaid}</span>
+                    <span className="num text-center" style={{ color: "var(--ink-2)" }}>{s.yyPmPaid}</span>
+                    <span className="num text-center font-bold" style={{ color: VENUES.yongyun.color }}>
+                      {s.yyPaid}
+                    </span>
+                    <span className="num text-right font-bold" style={{ color: VENUES.yongyun.color }}>
+                      ${s.yyFee}
+                    </span>
                   </div>
-                  <span className="num text-center" style={{ color: "var(--ink-2)" }}>{s.yyAmPaid}</span>
-                  <span className="num text-center" style={{ color: "var(--ink-2)" }}>{s.yyPmPaid}</span>
-                  <span className="num text-center font-bold" style={{ color: VENUES.yongyun.color }}>
-                    {s.yyPaid}
-                  </span>
-                  <span className="num text-right font-bold" style={{ color: VENUES.yongyun.color }}>
-                    ${s.yyFee}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
               <div className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold flex justify-between"
                    style={{ background: VENUES.yongyun.color, color: "#fff" }}>
                 <span>應收合計</span>
