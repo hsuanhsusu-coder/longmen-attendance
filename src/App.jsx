@@ -3290,12 +3290,51 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS 
       <section className="rounded-2xl p-4 sm:p-5 border-2"
                style={{ background: "var(--ink)", borderColor: "var(--ink)", color: "var(--bg)" }}>
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <div>
+          <div className="flex-1">
             <div className="text-[10px] sm:text-xs tk-x" style={{ color: "rgba(255,252,246,0.6)" }}>
               MONTHLY OVERVIEW
             </div>
-            <div className="display text-4xl sm:text-6xl mt-1">
-              {MONTH_NAMES_EN[M]} <span style={{ color: "var(--accent)" }}>{Y}</span>
+            <div className="flex items-center gap-2 mt-1">
+              <button onClick={() => {
+                const { Y: nY, M: nM } = shiftMonth(Y, M, -1);
+                setSelectedDate(`${nY}-${pad(nM + 1)}-01`);
+              }}
+                      className="btn-tactile w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center"
+                      style={{
+                        background: "rgba(255,252,246,0.12)",
+                        color: "rgba(255,252,246,0.85)",
+                      }}
+                      title="上個月">
+                <ChevronLeft size={18} strokeWidth={2.5} />
+              </button>
+              <div className="display text-3xl sm:text-5xl">
+                {MONTH_NAMES_EN[M]} <span style={{ color: "var(--accent)" }}>{Y}</span>
+              </div>
+              <button onClick={() => {
+                const { Y: nY, M: nM } = shiftMonth(Y, M, 1);
+                setSelectedDate(`${nY}-${pad(nM + 1)}-01`);
+              }}
+                      className="btn-tactile w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center"
+                      style={{
+                        background: "rgba(255,252,246,0.12)",
+                        color: "rgba(255,252,246,0.85)",
+                      }}
+                      title="下個月">
+                <ChevronRight size={18} strokeWidth={2.5} />
+              </button>
+              <button onClick={() => {
+                const today = new Date();
+                setSelectedDate(toDateStr(today));
+              }}
+                      className="btn-tactile px-2 sm:px-3 h-8 sm:h-10 rounded-lg flex items-center gap-1 text-[10px] sm:text-xs"
+                      style={{
+                        background: "rgba(255,252,246,0.08)",
+                        color: "rgba(255,252,246,0.7)",
+                      }}
+                      title="回到本月">
+                <RotateCcw size={12} strokeWidth={2.5} />
+                <span className="hidden sm:inline">本月</span>
+              </button>
             </div>
           </div>
           <div className="text-right">
