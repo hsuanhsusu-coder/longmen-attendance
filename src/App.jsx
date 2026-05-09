@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, createContext, useContext } from "react";
 import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
-import { doc, onSnapshot, setDoc, collection, addDoc, query, orderBy, limit, getDocs, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { doc, onSnapshot, setDoc, getDoc, collection, addDoc, query, orderBy, limit, getDocs, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db, googleProvider } from "./firebase";
 import * as XLSX from "xlsx";
 import {
@@ -443,6 +443,372 @@ const VENUE_CALENDAR = {
   "2026-08-29": { am: "yongyun", pm: "yongyun" },
   "2026-08-30": { am: "closed", pm: "closed" },
   "2026-08-31": { am: "yongyun", pm: "yongyun" },
+  // ===== 2026 上學期 (2026/09 ~ 2027/02) =====
+  "2026-09-01": { am: "longmen", pm: "longmen" },
+  "2026-09-02": { am: "longmen", pm: "longmen" },
+  "2026-09-03": { am: "longmen", pm: "longmen" },
+  "2026-09-04": { am: "longmen", pm: "longmen" },
+  "2026-09-05": { am: "longmen", pm: "closed" },
+  "2026-09-06": { am: "closed", pm: "closed" },
+  "2026-09-07": { am: "longmen", pm: "longmen" },
+  "2026-09-08": { am: "longmen", pm: "longmen" },
+  "2026-09-09": { am: "longmen", pm: "longmen" },
+  "2026-09-10": { am: "longmen", pm: "longmen" },
+  "2026-09-11": { am: "longmen", pm: "longmen" },
+  "2026-09-12": { am: "longmen", pm: "closed" },
+  "2026-09-13": { am: "closed", pm: "closed" },
+  "2026-09-14": { am: "longmen", pm: "longmen" },
+  "2026-09-15": { am: "longmen", pm: "longmen" },
+  "2026-09-16": { am: "longmen", pm: "longmen" },
+  "2026-09-17": { am: "longmen", pm: "longmen" },
+  "2026-09-18": { am: "longmen", pm: "longmen" },
+  "2026-09-19": { am: "longmen", pm: "closed" },
+  "2026-09-20": { am: "closed", pm: "closed" },
+  "2026-09-21": { am: "longmen", pm: "longmen" },
+  "2026-09-22": { am: "longmen", pm: "longmen" },
+  "2026-09-23": { am: "longmen", pm: "longmen" },
+  "2026-09-24": { am: "longmen", pm: "longmen" },
+  "2026-09-25": { am: "longmen", pm: "longmen" },
+  "2026-09-26": { am: "longmen", pm: "closed" },
+  "2026-09-27": { am: "closed", pm: "closed" },
+  "2026-09-28": { am: "longmen", pm: "longmen" },
+  "2026-09-29": { am: "longmen", pm: "longmen" },
+  "2026-09-30": { am: "longmen", pm: "longmen" },
+  "2026-10-01": { am: "longmen", pm: "longmen" },
+  "2026-10-02": { am: "longmen", pm: "longmen" },
+  "2026-10-03": { am: "longmen", pm: "closed" },
+  "2026-10-04": { am: "closed", pm: "closed" },
+  "2026-10-05": { am: "longmen", pm: "longmen" },
+  "2026-10-06": { am: "longmen", pm: "longmen" },
+  "2026-10-07": { am: "longmen", pm: "longmen" },
+  "2026-10-08": { am: "longmen", pm: "longmen" },
+  "2026-10-09": { am: "longmen", pm: "longmen" },
+  "2026-10-10": { am: "longmen", pm: "closed" },
+  "2026-10-11": { am: "closed", pm: "closed" },
+  "2026-10-12": { am: "longmen", pm: "longmen" },
+  "2026-10-13": { am: "longmen", pm: "longmen" },
+  "2026-10-14": { am: "longmen", pm: "longmen" },
+  "2026-10-15": { am: "longmen", pm: "longmen" },
+  "2026-10-16": { am: "longmen", pm: "longmen" },
+  "2026-10-17": { am: "longmen", pm: "closed" },
+  "2026-10-18": { am: "closed", pm: "closed" },
+  "2026-10-19": { am: "longmen", pm: "longmen" },
+  "2026-10-20": { am: "longmen", pm: "longmen" },
+  "2026-10-21": { am: "longmen", pm: "longmen" },
+  "2026-10-22": { am: "longmen", pm: "longmen" },
+  "2026-10-23": { am: "longmen", pm: "longmen" },
+  "2026-10-24": { am: "longmen", pm: "closed" },
+  "2026-10-25": { am: "closed", pm: "closed" },
+  "2026-10-26": { am: "longmen", pm: "longmen" },
+  "2026-10-27": { am: "longmen", pm: "longmen" },
+  "2026-10-28": { am: "longmen", pm: "longmen" },
+  "2026-10-29": { am: "longmen", pm: "longmen" },
+  "2026-10-30": { am: "longmen", pm: "longmen" },
+  "2026-10-31": { am: "longmen", pm: "closed" },
+  "2026-11-01": { am: "closed", pm: "closed" },
+  "2026-11-02": { am: "longmen", pm: "longmen" },
+  "2026-11-03": { am: "longmen", pm: "longmen" },
+  "2026-11-04": { am: "longmen", pm: "longmen" },
+  "2026-11-05": { am: "longmen", pm: "longmen" },
+  "2026-11-06": { am: "longmen", pm: "longmen" },
+  "2026-11-07": { am: "longmen", pm: "closed" },
+  "2026-11-08": { am: "closed", pm: "closed" },
+  "2026-11-09": { am: "longmen", pm: "longmen" },
+  "2026-11-10": { am: "longmen", pm: "longmen" },
+  "2026-11-11": { am: "longmen", pm: "longmen" },
+  "2026-11-12": { am: "longmen", pm: "longmen" },
+  "2026-11-13": { am: "longmen", pm: "longmen" },
+  "2026-11-14": { am: "longmen", pm: "closed" },
+  "2026-11-15": { am: "closed", pm: "closed" },
+  "2026-11-16": { am: "longmen", pm: "longmen" },
+  "2026-11-17": { am: "longmen", pm: "longmen" },
+  "2026-11-18": { am: "longmen", pm: "longmen" },
+  "2026-11-19": { am: "longmen", pm: "longmen" },
+  "2026-11-20": { am: "longmen", pm: "longmen" },
+  "2026-11-21": { am: "longmen", pm: "closed" },
+  "2026-11-22": { am: "closed", pm: "closed" },
+  "2026-11-23": { am: "longmen", pm: "longmen" },
+  "2026-11-24": { am: "longmen", pm: "longmen" },
+  "2026-11-25": { am: "longmen", pm: "longmen" },
+  "2026-11-26": { am: "longmen", pm: "longmen" },
+  "2026-11-27": { am: "longmen", pm: "longmen" },
+  "2026-11-28": { am: "longmen", pm: "closed" },
+  "2026-11-29": { am: "closed", pm: "closed" },
+  "2026-11-30": { am: "longmen", pm: "longmen" },
+  "2026-12-01": { am: "longmen", pm: "longmen" },
+  "2026-12-02": { am: "longmen", pm: "longmen" },
+  "2026-12-03": { am: "longmen", pm: "longmen" },
+  "2026-12-04": { am: "longmen", pm: "longmen" },
+  "2026-12-05": { am: "longmen", pm: "closed" },
+  "2026-12-06": { am: "closed", pm: "closed" },
+  "2026-12-07": { am: "longmen", pm: "longmen" },
+  "2026-12-08": { am: "longmen", pm: "longmen" },
+  "2026-12-09": { am: "longmen", pm: "longmen" },
+  "2026-12-10": { am: "longmen", pm: "longmen" },
+  "2026-12-11": { am: "longmen", pm: "longmen" },
+  "2026-12-12": { am: "longmen", pm: "closed" },
+  "2026-12-13": { am: "closed", pm: "closed" },
+  "2026-12-14": { am: "longmen", pm: "longmen" },
+  "2026-12-15": { am: "longmen", pm: "longmen" },
+  "2026-12-16": { am: "longmen", pm: "longmen" },
+  "2026-12-17": { am: "longmen", pm: "longmen" },
+  "2026-12-18": { am: "longmen", pm: "longmen" },
+  "2026-12-19": { am: "longmen", pm: "closed" },
+  "2026-12-20": { am: "closed", pm: "closed" },
+  "2026-12-21": { am: "longmen", pm: "longmen" },
+  "2026-12-22": { am: "longmen", pm: "longmen" },
+  "2026-12-23": { am: "longmen", pm: "longmen" },
+  "2026-12-24": { am: "longmen", pm: "longmen" },
+  "2026-12-25": { am: "longmen", pm: "longmen" },
+  "2026-12-26": { am: "longmen", pm: "closed" },
+  "2026-12-27": { am: "closed", pm: "closed" },
+  "2026-12-28": { am: "longmen", pm: "longmen" },
+  "2026-12-29": { am: "longmen", pm: "longmen" },
+  "2026-12-30": { am: "longmen", pm: "longmen" },
+  "2026-12-31": { am: "longmen", pm: "longmen" },
+  "2027-01-01": { am: "longmen", pm: "longmen" },
+  "2027-01-02": { am: "longmen", pm: "closed" },
+  "2027-01-03": { am: "closed", pm: "closed" },
+  "2027-01-04": { am: "longmen", pm: "longmen" },
+  "2027-01-05": { am: "longmen", pm: "longmen" },
+  "2027-01-06": { am: "longmen", pm: "longmen" },
+  "2027-01-07": { am: "longmen", pm: "longmen" },
+  "2027-01-08": { am: "longmen", pm: "longmen" },
+  "2027-01-09": { am: "longmen", pm: "closed" },
+  "2027-01-10": { am: "closed", pm: "closed" },
+  "2027-01-11": { am: "longmen", pm: "longmen" },
+  "2027-01-12": { am: "longmen", pm: "longmen" },
+  "2027-01-13": { am: "longmen", pm: "longmen" },
+  "2027-01-14": { am: "longmen", pm: "longmen" },
+  "2027-01-15": { am: "longmen", pm: "longmen" },
+  "2027-01-16": { am: "longmen", pm: "closed" },
+  "2027-01-17": { am: "closed", pm: "closed" },
+  "2027-01-18": { am: "longmen", pm: "longmen" },
+  "2027-01-19": { am: "longmen", pm: "longmen" },
+  "2027-01-20": { am: "longmen", pm: "longmen" },
+  "2027-01-21": { am: "longmen", pm: "longmen" },
+  "2027-01-22": { am: "longmen", pm: "longmen" },
+  "2027-01-23": { am: "longmen", pm: "closed" },
+  "2027-01-24": { am: "closed", pm: "closed" },
+  "2027-01-25": { am: "longmen", pm: "longmen" },
+  "2027-01-26": { am: "longmen", pm: "longmen" },
+  "2027-01-27": { am: "longmen", pm: "longmen" },
+  "2027-01-28": { am: "longmen", pm: "longmen" },
+  "2027-01-29": { am: "longmen", pm: "longmen" },
+  "2027-01-30": { am: "longmen", pm: "closed" },
+  "2027-01-31": { am: "closed", pm: "closed" },
+  "2027-02-01": { am: "longmen", pm: "longmen" },
+  "2027-02-02": { am: "longmen", pm: "longmen" },
+  "2027-02-03": { am: "longmen", pm: "longmen" },
+  "2027-02-04": { am: "longmen", pm: "longmen" },
+  "2027-02-05": { am: "longmen", pm: "longmen" },
+  "2027-02-06": { am: "longmen", pm: "closed" },
+  "2027-02-07": { am: "closed", pm: "closed" },
+  "2027-02-08": { am: "longmen", pm: "longmen" },
+  "2027-02-09": { am: "longmen", pm: "longmen" },
+  "2027-02-10": { am: "longmen", pm: "longmen" },
+  "2027-02-11": { am: "longmen", pm: "longmen" },
+  "2027-02-12": { am: "longmen", pm: "longmen" },
+  "2027-02-13": { am: "longmen", pm: "closed" },
+  "2027-02-14": { am: "closed", pm: "closed" },
+  "2027-02-15": { am: "longmen", pm: "longmen" },
+  "2027-02-16": { am: "longmen", pm: "longmen" },
+  "2027-02-17": { am: "longmen", pm: "longmen" },
+  "2027-02-18": { am: "longmen", pm: "longmen" },
+  "2027-02-19": { am: "longmen", pm: "longmen" },
+  "2027-02-20": { am: "longmen", pm: "closed" },
+  "2027-02-21": { am: "closed", pm: "closed" },
+  "2027-02-22": { am: "longmen", pm: "longmen" },
+  "2027-02-23": { am: "longmen", pm: "longmen" },
+  "2027-02-24": { am: "longmen", pm: "longmen" },
+  "2027-02-25": { am: "longmen", pm: "longmen" },
+  "2027-02-26": { am: "longmen", pm: "longmen" },
+  "2027-02-27": { am: "longmen", pm: "closed" },
+  "2027-02-28": { am: "closed", pm: "closed" },
+  "2027-03-01": { am: "longmen", pm: "longmen" },
+  "2027-03-02": { am: "longmen", pm: "longmen" },
+  "2027-03-03": { am: "longmen", pm: "longmen" },
+  "2027-03-04": { am: "longmen", pm: "longmen" },
+  "2027-03-05": { am: "longmen", pm: "longmen" },
+  "2027-03-06": { am: "longmen", pm: "closed" },
+  "2027-03-07": { am: "closed", pm: "closed" },
+  "2027-03-08": { am: "longmen", pm: "longmen" },
+  "2027-03-09": { am: "longmen", pm: "longmen" },
+  "2027-03-10": { am: "longmen", pm: "longmen" },
+  "2027-03-11": { am: "longmen", pm: "longmen" },
+  "2027-03-12": { am: "longmen", pm: "longmen" },
+  "2027-03-13": { am: "longmen", pm: "closed" },
+  "2027-03-14": { am: "closed", pm: "closed" },
+  "2027-03-15": { am: "longmen", pm: "longmen" },
+  "2027-03-16": { am: "longmen", pm: "longmen" },
+  "2027-03-17": { am: "longmen", pm: "longmen" },
+  "2027-03-18": { am: "longmen", pm: "longmen" },
+  "2027-03-19": { am: "longmen", pm: "longmen" },
+  "2027-03-20": { am: "longmen", pm: "closed" },
+  "2027-03-21": { am: "closed", pm: "closed" },
+  "2027-03-22": { am: "longmen", pm: "longmen" },
+  "2027-03-23": { am: "longmen", pm: "longmen" },
+  "2027-03-24": { am: "longmen", pm: "longmen" },
+  "2027-03-25": { am: "longmen", pm: "longmen" },
+  "2027-03-26": { am: "longmen", pm: "longmen" },
+  "2027-03-27": { am: "longmen", pm: "closed" },
+  "2027-03-28": { am: "closed", pm: "closed" },
+  "2027-03-29": { am: "longmen", pm: "longmen" },
+  "2027-03-30": { am: "longmen", pm: "longmen" },
+  "2027-03-31": { am: "longmen", pm: "longmen" },
+  "2027-04-01": { am: "longmen", pm: "longmen" },
+  "2027-04-02": { am: "longmen", pm: "longmen" },
+  "2027-04-03": { am: "longmen", pm: "closed" },
+  "2027-04-04": { am: "closed", pm: "closed" },
+  "2027-04-05": { am: "longmen", pm: "longmen" },
+  "2027-04-06": { am: "longmen", pm: "longmen" },
+  "2027-04-07": { am: "longmen", pm: "longmen" },
+  "2027-04-08": { am: "longmen", pm: "longmen" },
+  "2027-04-09": { am: "longmen", pm: "longmen" },
+  "2027-04-10": { am: "longmen", pm: "closed" },
+  "2027-04-11": { am: "closed", pm: "closed" },
+  "2027-04-12": { am: "longmen", pm: "longmen" },
+  "2027-04-13": { am: "longmen", pm: "longmen" },
+  "2027-04-14": { am: "longmen", pm: "longmen" },
+  "2027-04-15": { am: "longmen", pm: "longmen" },
+  "2027-04-16": { am: "longmen", pm: "longmen" },
+  "2027-04-17": { am: "longmen", pm: "closed" },
+  "2027-04-18": { am: "closed", pm: "closed" },
+  "2027-04-19": { am: "longmen", pm: "longmen" },
+  "2027-04-20": { am: "longmen", pm: "longmen" },
+  "2027-04-21": { am: "longmen", pm: "longmen" },
+  "2027-04-22": { am: "longmen", pm: "longmen" },
+  "2027-04-23": { am: "longmen", pm: "longmen" },
+  "2027-04-24": { am: "longmen", pm: "closed" },
+  "2027-04-25": { am: "closed", pm: "closed" },
+  "2027-04-26": { am: "longmen", pm: "longmen" },
+  "2027-04-27": { am: "longmen", pm: "longmen" },
+  "2027-04-28": { am: "longmen", pm: "longmen" },
+  "2027-04-29": { am: "longmen", pm: "longmen" },
+  "2027-04-30": { am: "longmen", pm: "longmen" },
+  "2027-05-01": { am: "longmen", pm: "closed" },
+  "2027-05-02": { am: "closed", pm: "closed" },
+  "2027-05-03": { am: "longmen", pm: "longmen" },
+  "2027-05-04": { am: "longmen", pm: "longmen" },
+  "2027-05-05": { am: "longmen", pm: "longmen" },
+  "2027-05-06": { am: "longmen", pm: "longmen" },
+  "2027-05-07": { am: "longmen", pm: "longmen" },
+  "2027-05-08": { am: "longmen", pm: "closed" },
+  "2027-05-09": { am: "closed", pm: "closed" },
+  "2027-05-10": { am: "longmen", pm: "longmen" },
+  "2027-05-11": { am: "longmen", pm: "longmen" },
+  "2027-05-12": { am: "longmen", pm: "longmen" },
+  "2027-05-13": { am: "longmen", pm: "longmen" },
+  "2027-05-14": { am: "longmen", pm: "longmen" },
+  "2027-05-15": { am: "longmen", pm: "closed" },
+  "2027-05-16": { am: "closed", pm: "closed" },
+  "2027-05-17": { am: "longmen", pm: "longmen" },
+  "2027-05-18": { am: "longmen", pm: "longmen" },
+  "2027-05-19": { am: "longmen", pm: "longmen" },
+  "2027-05-20": { am: "longmen", pm: "longmen" },
+  "2027-05-21": { am: "longmen", pm: "longmen" },
+  "2027-05-22": { am: "longmen", pm: "closed" },
+  "2027-05-23": { am: "closed", pm: "closed" },
+  "2027-05-24": { am: "longmen", pm: "longmen" },
+  "2027-05-25": { am: "longmen", pm: "longmen" },
+  "2027-05-26": { am: "longmen", pm: "longmen" },
+  "2027-05-27": { am: "longmen", pm: "longmen" },
+  "2027-05-28": { am: "longmen", pm: "longmen" },
+  "2027-05-29": { am: "longmen", pm: "closed" },
+  "2027-05-30": { am: "closed", pm: "closed" },
+  "2027-05-31": { am: "longmen", pm: "longmen" },
+  "2027-06-01": { am: "longmen", pm: "longmen" },
+  "2027-06-02": { am: "longmen", pm: "longmen" },
+  "2027-06-03": { am: "longmen", pm: "longmen" },
+  "2027-06-04": { am: "longmen", pm: "longmen" },
+  "2027-06-05": { am: "longmen", pm: "closed" },
+  "2027-06-06": { am: "closed", pm: "closed" },
+  "2027-06-07": { am: "longmen", pm: "longmen" },
+  "2027-06-08": { am: "longmen", pm: "longmen" },
+  "2027-06-09": { am: "longmen", pm: "longmen" },
+  "2027-06-10": { am: "longmen", pm: "longmen" },
+  "2027-06-11": { am: "longmen", pm: "longmen" },
+  "2027-06-12": { am: "longmen", pm: "closed" },
+  "2027-06-13": { am: "closed", pm: "closed" },
+  "2027-06-14": { am: "longmen", pm: "longmen" },
+  "2027-06-15": { am: "longmen", pm: "longmen" },
+  "2027-06-16": { am: "longmen", pm: "longmen" },
+  "2027-06-17": { am: "longmen", pm: "longmen" },
+  "2027-06-18": { am: "longmen", pm: "longmen" },
+  "2027-06-19": { am: "longmen", pm: "closed" },
+  "2027-06-20": { am: "closed", pm: "closed" },
+  "2027-06-21": { am: "longmen", pm: "longmen" },
+  "2027-06-22": { am: "longmen", pm: "longmen" },
+  "2027-06-23": { am: "longmen", pm: "longmen" },
+  "2027-06-24": { am: "longmen", pm: "longmen" },
+  "2027-06-25": { am: "longmen", pm: "longmen" },
+  "2027-06-26": { am: "longmen", pm: "closed" },
+  "2027-06-27": { am: "closed", pm: "closed" },
+  "2027-06-28": { am: "longmen", pm: "longmen" },
+  "2027-06-29": { am: "longmen", pm: "longmen" },
+  "2027-06-30": { am: "longmen", pm: "longmen" },
+  "2027-07-01": { am: "longmen", pm: "longmen" },
+  "2027-07-02": { am: "longmen", pm: "longmen" },
+  "2027-07-03": { am: "longmen", pm: "closed" },
+  "2027-07-04": { am: "closed", pm: "closed" },
+  "2027-07-05": { am: "longmen", pm: "longmen" },
+  "2027-07-06": { am: "longmen", pm: "longmen" },
+  "2027-07-07": { am: "longmen", pm: "longmen" },
+  "2027-07-08": { am: "longmen", pm: "longmen" },
+  "2027-07-09": { am: "longmen", pm: "longmen" },
+  "2027-07-10": { am: "longmen", pm: "closed" },
+  "2027-07-11": { am: "closed", pm: "closed" },
+  "2027-07-12": { am: "longmen", pm: "longmen" },
+  "2027-07-13": { am: "longmen", pm: "longmen" },
+  "2027-07-14": { am: "longmen", pm: "longmen" },
+  "2027-07-15": { am: "longmen", pm: "longmen" },
+  "2027-07-16": { am: "longmen", pm: "longmen" },
+  "2027-07-17": { am: "longmen", pm: "closed" },
+  "2027-07-18": { am: "closed", pm: "closed" },
+  "2027-07-19": { am: "longmen", pm: "longmen" },
+  "2027-07-20": { am: "longmen", pm: "longmen" },
+  "2027-07-21": { am: "longmen", pm: "longmen" },
+  "2027-07-22": { am: "longmen", pm: "longmen" },
+  "2027-07-23": { am: "longmen", pm: "longmen" },
+  "2027-07-24": { am: "longmen", pm: "closed" },
+  "2027-07-25": { am: "closed", pm: "closed" },
+  "2027-07-26": { am: "longmen", pm: "longmen" },
+  "2027-07-27": { am: "longmen", pm: "longmen" },
+  "2027-07-28": { am: "longmen", pm: "longmen" },
+  "2027-07-29": { am: "longmen", pm: "longmen" },
+  "2027-07-30": { am: "longmen", pm: "longmen" },
+  "2027-07-31": { am: "longmen", pm: "closed" },
+  "2027-08-01": { am: "closed", pm: "closed" },
+  "2027-08-02": { am: "longmen", pm: "longmen" },
+  "2027-08-03": { am: "longmen", pm: "longmen" },
+  "2027-08-04": { am: "longmen", pm: "longmen" },
+  "2027-08-05": { am: "longmen", pm: "longmen" },
+  "2027-08-06": { am: "longmen", pm: "longmen" },
+  "2027-08-07": { am: "longmen", pm: "closed" },
+  "2027-08-08": { am: "closed", pm: "closed" },
+  "2027-08-09": { am: "longmen", pm: "longmen" },
+  "2027-08-10": { am: "longmen", pm: "longmen" },
+  "2027-08-11": { am: "longmen", pm: "longmen" },
+  "2027-08-12": { am: "longmen", pm: "longmen" },
+  "2027-08-13": { am: "longmen", pm: "longmen" },
+  "2027-08-14": { am: "longmen", pm: "closed" },
+  "2027-08-15": { am: "closed", pm: "closed" },
+  "2027-08-16": { am: "longmen", pm: "longmen" },
+  "2027-08-17": { am: "longmen", pm: "longmen" },
+  "2027-08-18": { am: "longmen", pm: "longmen" },
+  "2027-08-19": { am: "longmen", pm: "longmen" },
+  "2027-08-20": { am: "longmen", pm: "longmen" },
+  "2027-08-21": { am: "longmen", pm: "closed" },
+  "2027-08-22": { am: "closed", pm: "closed" },
+  "2027-08-23": { am: "longmen", pm: "longmen" },
+  "2027-08-24": { am: "longmen", pm: "longmen" },
+  "2027-08-25": { am: "longmen", pm: "longmen" },
+  "2027-08-26": { am: "longmen", pm: "longmen" },
+  "2027-08-27": { am: "longmen", pm: "longmen" },
+  "2027-08-28": { am: "longmen", pm: "closed" },
+  "2027-08-29": { am: "closed", pm: "closed" },
+  "2027-08-30": { am: "longmen", pm: "longmen" },
+  "2027-08-31": { am: "longmen", pm: "longmen" },
 };
 
 // 取得行事曆預設場地（如果該日有 Excel 行事曆設定 → 用之；否則回 fallback）
@@ -465,6 +831,28 @@ const getVenue = (attendance, dateStr, period) => {
   const venueObj = attendance?.[dateStr]?.venue;
   if (venueObj && venueObj[period]) return venueObj[period];
   return getCalendarVenue(dateStr, period);
+};
+
+// 取得某天某人的 sch 值（優先：當天快照 > 月鎖定快照 > 當前 roster.sch）
+// 這個函式讓「修改 roster.sch」不會影響已鎖定月份的歷史統計
+const getSch = (attendance, dateStr, person, idx) => {
+  const day = attendance?.[dateStr];
+  // 1. 當天有 sch 快照（鎖定時寫入）
+  if (day?.schSnapshot && day.schSnapshot[person.seq]) {
+    return day.schSnapshot[person.seq][idx] === 1;
+  }
+  // 2. 月份有快照（按月鎖定的格式）
+  const month = dateStr.slice(0, 7);
+  const monthSnap = attendance?.[`__lock_${month}`];
+  if (monthSnap?.schSnapshot && monthSnap.schSnapshot[person.seq]) {
+    return monthSnap.schSnapshot[person.seq][idx] === 1;
+  }
+  // 3. fallback：當前 roster
+  return person.sch?.[idx] === 1;
+};
+// 月份是否已鎖定
+const isMonthLocked = (attendance, monthStr) => {
+  return !!attendance?.[`__lock_${monthStr}`];
 };
 
 const getDateInfo = (dateStr) => {
@@ -836,7 +1224,7 @@ function AttendanceApp({ user }) {
         // 此人當日是否個練（任一場勾就整天免費）
         const dayHasSolo = !!(dayData.am_solo?.[p.seq] || dayData.pm_solo?.[p.seq]);
         // AM
-        const amSch = p.sch[day.info.amIdx] === 1;
+        const amSch = getSch(attendance, day.dateStr, p, day.info.amIdx);
         const amAc = dayData.am?.[p.seq];
         const amIsLate = !!dayData.am_late?.[p.seq];
         const amIsSolo = !!dayData.am_solo?.[p.seq];
@@ -862,7 +1250,7 @@ function AttendanceApp({ user }) {
           }
         }
         // PM
-        const pmSch = p.sch[day.info.pmIdx] === 1;
+        const pmSch = getSch(attendance, day.dateStr, p, day.info.pmIdx);
         const pmAc = dayData.pm?.[p.seq];
         const pmIsLate = !!dayData.pm_late?.[p.seq];
         const pmIsSolo = !!dayData.pm_solo?.[p.seq];
@@ -958,7 +1346,7 @@ function AttendanceApp({ user }) {
         const venue = getVenue(attendance, day.dateStr, per);
         let sch = 0, on = 0, no = 0, pn = 0, bn = 0, lt = 0, yyOn = 0, yyPaid = 0, soloCnt = 0;
         sortedRoster.forEach(p => {
-          const isSch = p.sch[idx] === 1;
+          const isSch = getSch(attendance, day.dateStr, p, idx);
           const ac = slot[p.seq];
           const isLate = !!lateSlot[p.seq];
           // 整天個練判斷
@@ -1044,7 +1432,7 @@ function AttendanceApp({ user }) {
         const venue = getVenue(attendance, day.dateStr, per);
         const isYy = venue === "yongyun";
         sortedRoster.forEach(p => {
-          const sch = p.sch[idx] === 1;
+          const sch = getSch(attendance, day.dateStr, p, idx);
           const ac = slot[p.seq];
           const isLate = !!lateSlot[p.seq];
           const isSolo = !!soloSlot[p.seq];
@@ -1253,6 +1641,8 @@ function AttendanceApp({ user }) {
               user={user}
               attendance={attendance}
               setAttendance={setAttendance}
+              roster={roster}
+              setRoster={setRoster}
               logAction={logAction}
             />
           )}
@@ -1798,7 +2188,7 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
   const dayNote = attendance[selectedDate]?.notes || "";
 
   const rows = useMemo(() => roster.map(p => {
-    const scheduled = p.sch[sessionIdx] === 1;
+    const scheduled = getSch(attendance, selectedDate, p, sessionIdx);
     const actual = sessionAtt[p.seq] || null;
     const late = !!sessionLate[p.seq];
     const solo = !!sessionSolo[p.seq];
@@ -2753,8 +3143,8 @@ function DailyView({ selectedDate, setSelectedDate, attendance, setTab, setPerio
   const dayNote = attendance[selectedDate]?.notes || "";
 
   const rows = roster.map(p => {
-    const amSch = p.sch[dateInfo.amIdx] === 1;
-    const pmSch = p.sch[dateInfo.pmIdx] === 1;
+    const amSch = getSch(attendance, selectedDate, p, dateInfo.amIdx);
+    const pmSch = getSch(attendance, selectedDate, p, dateInfo.pmIdx);
     const amStatus = computeStatus(amSch, amAtt[p.seq]);
     const pmStatus = computeStatus(pmSch, pmAtt[p.seq]);
     return {
@@ -3173,7 +3563,7 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS 
       const pmVenue = getVenue(attendance, day.dateStr, "pm");
       const dayHasSolo = !!(dayData.am_solo?.[p.seq] || dayData.pm_solo?.[p.seq]);
       const am = (() => {
-        const sch = p.sch[day.info.amIdx] === 1;
+        const sch = getSch(attendance, day.dateStr, p, day.info.amIdx);
         const ac = dayData.am?.[p.seq];
         const isLate = !!dayData.am_late?.[p.seq];
         const isSolo = !!dayData.am_solo?.[p.seq];
@@ -3202,7 +3592,7 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS 
         return "off";
       })();
       const pm = (() => {
-        const sch = p.sch[day.info.pmIdx] === 1;
+        const sch = getSch(attendance, day.dateStr, p, day.info.pmIdx);
         const ac = dayData.pm?.[p.seq];
         const isLate = !!dayData.pm_late?.[p.seq];
         const isSolo = !!dayData.pm_solo?.[p.seq];
@@ -3941,8 +4331,8 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
     return "pending_excused";
   };
   const rows = roster.map(p => {
-    const amSch = p.sch[dateInfo.amIdx] === 1;
-    const pmSch = p.sch[dateInfo.pmIdx] === 1;
+    const amSch = getSch(attendance, selectedDate, p, dateInfo.amIdx);
+    const pmSch = getSch(attendance, selectedDate, p, dateInfo.pmIdx);
     const dayHasSolo = !!(amSolo[p.seq] || pmSolo[p.seq]);
     return {
       ...p, amSch, pmSch,
@@ -5255,6 +5645,7 @@ function ReadOnlyManagement({ roster, ownerEmail, adminEmails, userEmail }) {
         </div>
       </section>
 
+
       <section className="rounded-2xl p-4 sm:p-5 border-2"
                style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
         <div className="text-[10px] tk-x mb-2" style={{ color: "var(--mute)" }}>
@@ -5976,6 +6367,9 @@ const ACTION_LABELS = {
   reimport_calendar: "🔄 重新匯入行事曆",
   edit_calendar: "📅 編輯行事曆",
   export_roster: "📥 匯出隊員名單",
+  promote_grade: "🎓 升年級",
+  lock_month: "🔒 鎖定月份",
+  unlock_month: "🔓 解鎖月份",
 };
 
 function AuditLogRow({ log }) {
@@ -6053,10 +6447,13 @@ function AuditLogRow({ log }) {
 }
 
 // ============ SETTINGS VIEW ============
-function SettingsView({ user, attendance, setAttendance, logAction }) {
+function SettingsView({ user, attendance, setAttendance, roster, setRoster, logAction }) {
   const [reimporting, setReimporting] = useState(false);
   const [confirmStep, setConfirmStep] = useState(0); // 0=idle, 1=confirm, 2=done
   const [resultText, setResultText] = useState("");
+  // 升年級狀態
+  const [pgConfirm, setPgConfirm] = useState(0); // 0=idle, 1=preview, 2=confirm, 3=done
+  const [pgResult, setPgResult] = useState("");
 
   // 計算行事曆統計
   const calStats = useMemo(() => {
@@ -6309,6 +6706,161 @@ function SettingsView({ user, attendance, setAttendance, logAction }) {
         )}
       </section>
 
+      {/* 月份鎖定區 */}
+      <section className="rounded-2xl p-4 sm:p-5 border-2"
+               style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
+        <h3 className="display-cn text-base sm:text-lg mb-2" style={{ color: "var(--ink)" }}>
+          🔒 月份鎖定
+        </h3>
+        <p className="text-xs mb-3" style={{ color: "var(--mute)" }}>
+          每月底鎖定該月，之後修改隊員訓練表（sch）不會影響該月歷史統計。<br/>
+          鎖定時系統會把當下訓練表「快照」存進去。
+        </p>
+        <MonthLockSection
+          attendance={attendance}
+          setAttendance={setAttendance}
+          roster={roster}
+          user={user}
+          logAction={logAction}
+        />
+      </section>
+
+      <section className="rounded-2xl p-4 sm:p-5 border-2"
+               style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
+        <h3 className="display-cn text-base sm:text-lg mb-3" style={{ color: "var(--ink)" }}>
+          🎓 升年級工具
+        </h3>
+        <p className="text-xs mb-4" style={{ color: "var(--mute)" }}>
+          學期末用：9 年級畢業（軟刪除）、8 年級升 9、7 年級升 8。歷史紀錄全部保留。
+        </p>
+
+        {(() => {
+          const grade9 = roster.filter(p => p.grade === 9);
+          const grade8 = roster.filter(p => p.grade === 8);
+          const grade7 = roster.filter(p => p.grade === 7);
+          return (
+            <div className="grid grid-cols-3 gap-2 mb-4 text-xs">
+              <div className="rounded-lg p-3 border-2"
+                   style={{ background: "var(--red-bg)", borderColor: "var(--red)" }}>
+                <div className="font-bold mb-1" style={{ color: "var(--red)" }}>9 年級 → 畢業</div>
+                <div className="num text-2xl font-bold" style={{ color: "var(--red)" }}>{grade9.length}</div>
+                <div style={{ color: "var(--ink-2)" }}>位將軟刪除</div>
+              </div>
+              <div className="rounded-lg p-3 border-2"
+                   style={{ background: "var(--accent-bg)", borderColor: "var(--accent)" }}>
+                <div className="font-bold mb-1" style={{ color: "var(--accent-2)" }}>8 → 9 年級</div>
+                <div className="num text-2xl font-bold" style={{ color: "var(--accent-2)" }}>{grade8.length}</div>
+                <div style={{ color: "var(--ink-2)" }}>位升年級</div>
+              </div>
+              <div className="rounded-lg p-3 border-2"
+                   style={{ background: "var(--green-bg)", borderColor: "var(--green)" }}>
+                <div className="font-bold mb-1" style={{ color: "var(--green)" }}>7 → 8 年級</div>
+                <div className="num text-2xl font-bold" style={{ color: "var(--green)" }}>{grade7.length}</div>
+                <div style={{ color: "var(--ink-2)" }}>位升年級</div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {pgConfirm === 0 && (
+          <button onClick={() => setPgConfirm(1)}
+                  className="btn-tactile w-full px-4 py-3 rounded-lg font-medium border-2 flex items-center justify-center gap-2"
+                  style={{ background: "var(--accent-bg)", borderColor: "var(--accent)", color: "var(--accent-2)" }}>
+            🎓 開始升年級
+          </button>
+        )}
+
+        {pgConfirm === 1 && (
+          <div className="rounded-lg p-3 sm:p-4 border-2 space-y-3"
+               style={{ background: "var(--amber-bg)", borderColor: "var(--amber)" }}>
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={16} strokeWidth={2.5} style={{ color: "#5C4810", marginTop: 2 }} />
+              <div className="text-xs sm:text-sm" style={{ color: "#5C4810" }}>
+                <div className="font-bold mb-1">⚠️ 即將執行：</div>
+                <div>• {roster.filter(p => p.grade === 9).length} 位 9 年級 → 軟刪除（歷史紀錄保留，可在「管理」分頁還原）</div>
+                <div>• {roster.filter(p => p.grade === 8).length} 位 8 年級 → 升 9 年級</div>
+                <div>• {roster.filter(p => p.grade === 7).length} 位 7 年級 → 升 8 年級</div>
+                <div className="mt-2 font-bold">記得學期初來新增 7 年級新生！</div>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setPgConfirm(0)}
+                      className="btn-tactile flex-1 px-3 py-2 rounded-md text-sm font-medium border-2"
+                      style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+                取消
+              </button>
+              <button onClick={async () => {
+                // 執行升年級
+                const grade9 = roster.filter(p => p.grade === 9);
+                const grade8 = roster.filter(p => p.grade === 8);
+                const grade7 = roster.filter(p => p.grade === 7);
+                
+                // 1. 把 9 年級加入 deleted_persons
+                try {
+                  const ref = doc(db, "teams", "longmen", "data", "deleted_persons");
+                  const snap = await getDoc(ref);
+                  const existing = snap.exists() ? (snap.data().value || []) : [];
+                  const toDelete = grade9.map(p => ({
+                    ...p,
+                    deletedAt: Date.now(),
+                    deletedBy: user.email,
+                    deleteReason: "畢業（升年級工具）",
+                  }));
+                  await setDoc(ref, { value: [...existing, ...toDelete] });
+                } catch (e) {
+                  console.error("加入 deleted_persons 失敗", e);
+                }
+
+                // 2. 更新 roster：移除 9 年級、8 升 9、7 升 8
+                setRoster(prev => prev
+                  .filter(p => p.grade !== 9)  // 移除原 9 年級
+                  .map(p => {
+                    if (p.grade === 8) return { ...p, grade: 9 };
+                    if (p.grade === 7) return { ...p, grade: 8 };
+                    return p;
+                  }), {
+                  logPayload: {
+                    target: "roster",
+                    targetLabel: `升年級：9升畢業 ${grade9.length} 人 / 8升9 ${grade8.length} 人 / 7升8 ${grade7.length} 人`,
+                    before: { grade9: grade9.length, grade8: grade8.length, grade7: grade7.length },
+                    after: { grade9: grade8.length, grade8: grade7.length, grade7: 0, graduated: grade9.length },
+                  },
+                });
+                if (logAction) {
+                  logAction({
+                    action: "promote_grade",
+                    target: "roster",
+                    targetLabel: `升年級：${grade9.length} 位畢業、${grade8.length} 位 8→9、${grade7.length} 位 7→8`,
+                  });
+                }
+                setPgResult(`✅ 完成！9 年級 ${grade9.length} 位已軟刪除、8 年級 ${grade8.length} 位升 9、7 年級 ${grade7.length} 位升 8`);
+                setPgConfirm(3);
+              }}
+                      className="btn-tactile flex-1 px-3 py-2 rounded-md text-sm font-medium"
+                      style={{ background: "var(--accent-2)", color: "#fff" }}>
+                確認執行
+              </button>
+            </div>
+          </div>
+        )}
+
+        {pgConfirm === 3 && (
+          <div className="rounded-lg p-3 sm:p-4 border-2"
+               style={{ background: "var(--green-bg)", borderColor: "var(--green)" }}>
+            <div className="flex items-start gap-2">
+              <Check size={16} strokeWidth={2.5} style={{ color: "var(--green)", marginTop: 2 }} />
+              <div className="text-xs sm:text-sm" style={{ color: "var(--green)" }}>
+                {pgResult}
+              </div>
+            </div>
+            <button onClick={() => { setPgConfirm(0); setPgResult(""); }}
+                    className="btn-tactile mt-3 w-full px-3 py-2 rounded-md text-sm font-medium"
+                    style={{ background: "var(--green)", color: "#fff" }}>
+              完成
+            </button>
+          </div>
+        )}
+      </section>
       {/* 系統資訊 */}
       <section className="rounded-2xl border-2 p-4 sm:p-5"
                style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
@@ -6323,6 +6875,198 @@ function SettingsView({ user, attendance, setAttendance, logAction }) {
         </div>
       </section>
     </div>
+  );
+}
+
+// ============ MONTH LOCK SECTION ============
+function MonthLockSection({ attendance, setAttendance, roster, user, logAction }) {
+  const today = new Date();
+  const [viewY, setViewY] = useState(today.getFullYear());
+  const [viewM, setViewM] = useState(today.getMonth());
+  const [confirmLock, setConfirmLock] = useState(null); // { Y, M } or null
+  const [confirmUnlock, setConfirmUnlock] = useState(null); // { Y, M } or null
+
+  const monthStr = `${viewY}-${pad(viewM + 1)}`;
+  const isLocked = isMonthLocked(attendance, monthStr);
+  const lockData = attendance[`__lock_${monthStr}`];
+
+  // 統計該月有多少天有點名紀錄
+  const monthStats = useMemo(() => {
+    let daysWithAttendance = 0;
+    Object.keys(attendance).forEach(dateStr => {
+      if (!dateStr.startsWith(monthStr)) return;
+      if (dateStr.startsWith("__")) return;  // skip __lock_*
+      const d = attendance[dateStr];
+      if (d && (Object.keys(d.am || {}).length > 0 || Object.keys(d.pm || {}).length > 0)) {
+        daysWithAttendance++;
+      }
+    });
+    return { daysWithAttendance };
+  }, [attendance, monthStr]);
+
+  const goPrev = () => {
+    const { Y: nY, M: nM } = shiftMonth(viewY, viewM, -1);
+    setViewY(nY); setViewM(nM);
+  };
+  const goNext = () => {
+    const { Y: nY, M: nM } = shiftMonth(viewY, viewM, 1);
+    setViewY(nY); setViewM(nM);
+  };
+
+  const doLock = () => {
+    // 把當前 roster 的 sch 快照存進該月 lock 區
+    const schSnapshot = {};
+    roster.forEach(p => {
+      schSnapshot[p.seq] = [...p.sch];
+    });
+    setAttendance(prev => ({
+      ...prev,
+      [`__lock_${monthStr}`]: {
+        lockedAt: Date.now(),
+        lockedBy: user.email,
+        schSnapshot,
+        rosterSize: roster.length,
+      },
+    }), {
+      logPayload: {
+        target: `lock/${monthStr}`,
+        targetLabel: `鎖定 ${viewY} 年 ${viewM + 1} 月`,
+        before: null,
+        after: { rosterSize: roster.length, lockedBy: user.email },
+      },
+    });
+    if (logAction) {
+      logAction({
+        action: "lock_month",
+        target: `lock/${monthStr}`,
+        targetLabel: `鎖定 ${viewY} 年 ${viewM + 1} 月（${roster.length} 位隊員的訓練表已快照）`,
+      });
+    }
+    setConfirmLock(null);
+  };
+
+  const doUnlock = () => {
+    setAttendance(prev => {
+      const next = { ...prev };
+      delete next[`__lock_${monthStr}`];
+      return next;
+    }, {
+      logPayload: {
+        target: `lock/${monthStr}`,
+        targetLabel: `解鎖 ${viewY} 年 ${viewM + 1} 月`,
+        before: { rosterSize: lockData?.rosterSize },
+        after: null,
+      },
+    });
+    if (logAction) {
+      logAction({
+        action: "unlock_month",
+        target: `lock/${monthStr}`,
+        targetLabel: `解鎖 ${viewY} 年 ${viewM + 1} 月`,
+      });
+    }
+    setConfirmUnlock(null);
+  };
+
+  return (
+    <>
+      {/* 月份切換 */}
+      <div className="flex items-center justify-between gap-2 mb-3 p-3 rounded-lg"
+           style={{ background: "var(--panel-2)" }}>
+        <button onClick={goPrev}
+                className="btn-tactile w-8 h-8 rounded-md flex items-center justify-center border"
+                style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+          <ChevronLeft size={16} strokeWidth={2.5} />
+        </button>
+        <div className="display-cn text-base sm:text-lg font-bold" style={{ color: "var(--ink)" }}>
+          {viewY} 年 {viewM + 1} 月
+          {isLocked && (
+            <span className="ml-2 text-xs px-2 py-0.5 rounded-full"
+                  style={{ background: "var(--green-bg)", color: "var(--green)", fontWeight: 700 }}>
+              🔒 已鎖定
+            </span>
+          )}
+        </div>
+        <button onClick={goNext}
+                className="btn-tactile w-8 h-8 rounded-md flex items-center justify-center border"
+                style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+          <ChevronRight size={16} strokeWidth={2.5} />
+        </button>
+      </div>
+
+      {/* 月份資訊 */}
+      <div className="text-xs mb-3 space-y-1" style={{ color: "var(--ink-2)" }}>
+        <div>📊 該月有點名紀錄：<span className="num font-bold">{monthStats.daysWithAttendance}</span> 天</div>
+        {isLocked && lockData && (
+          <>
+            <div>🔒 鎖定時間：{new Date(lockData.lockedAt).toLocaleString("zh-TW")}</div>
+            <div>👤 鎖定人：{lockData.lockedBy}</div>
+            <div>👥 鎖定當下隊員數：{lockData.rosterSize} 人</div>
+          </>
+        )}
+      </div>
+
+      {/* 鎖定/解鎖按鈕 */}
+      {!isLocked ? (
+        confirmLock ? (
+          <div className="rounded-lg p-3 border-2 space-y-2"
+               style={{ background: "var(--amber-bg)", borderColor: "var(--amber)" }}>
+            <div className="text-xs sm:text-sm" style={{ color: "#5C4810" }}>
+              <div className="font-bold mb-1">⚠️ 確認鎖定 {viewY} 年 {viewM + 1} 月？</div>
+              <div>系統會把當下 {roster.length} 位隊員的訓練表快照存進去。</div>
+              <div>之後改 sch（管理分頁）→ 不影響此月份統計。</div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmLock(null)}
+                      className="btn-tactile flex-1 px-3 py-2 rounded-md text-sm border-2"
+                      style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+                取消
+              </button>
+              <button onClick={doLock}
+                      className="btn-tactile flex-1 px-3 py-2 rounded-md text-sm font-medium"
+                      style={{ background: "var(--green)", color: "#fff" }}>
+                🔒 確認鎖定
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setConfirmLock(true)}
+                  className="btn-tactile w-full px-4 py-3 rounded-lg font-medium border-2 flex items-center justify-center gap-2"
+                  style={{ background: "var(--accent-bg)", borderColor: "var(--accent)", color: "var(--accent-2)" }}>
+            🔒 鎖定 {viewY} 年 {viewM + 1} 月
+          </button>
+        )
+      ) : (
+        confirmUnlock ? (
+          <div className="rounded-lg p-3 border-2 space-y-2"
+               style={{ background: "var(--red-bg)", borderColor: "var(--red)" }}>
+            <div className="text-xs sm:text-sm" style={{ color: "var(--red)" }}>
+              <div className="font-bold mb-1">⚠️ 確認解鎖？</div>
+              <div>解鎖後，當下訓練表（sch）會生效於此月份。</div>
+              <div>歷史統計可能會跟著變動。</div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmUnlock(null)}
+                      className="btn-tactile flex-1 px-3 py-2 rounded-md text-sm border-2"
+                      style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+                取消
+              </button>
+              <button onClick={doUnlock}
+                      className="btn-tactile flex-1 px-3 py-2 rounded-md text-sm font-medium"
+                      style={{ background: "var(--red)", color: "#fff" }}>
+                🔓 確認解鎖
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setConfirmUnlock(true)}
+                  className="btn-tactile w-full px-4 py-3 rounded-lg font-medium border-2"
+                  style={{ background: "var(--panel-2)", borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+            🔓 解鎖此月份
+          </button>
+        )
+      )}
+    </>
   );
 }
 
