@@ -3440,46 +3440,95 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
   const exportFee = () => {
     const wb = XLSX.utils.book_new();
 
-    // ========== Sheet 1: 應收費用清單 ==========
-    const list = paidList.map(s => ({
-      "序號": s.seq,
-      "班級": s.cls,
-      "座號": s.num,
-      "姓名": s.name,
-      "年級": GRADE_NAMES[s.grade],
-      "早訓出席": s.yyAmPaid,
-      "午訓出席": s.yyPmPaid,
-      "應收場次": s.yyPaid,
-      "應收費用": s.yyFee,
-    }));
-    list.push({
+    // ========== Sheet 1: 應收費用清單（每場次明細） ==========
+    // 收集本月所有永運場次的日期 + 早午（依時間順序）
+    const yySessions = [];
+    TRAINING_DAYS.forEach(day => {
+      ["am", "pm"].forEach(per => {
+        const venue = getVenue(attendance, day.dateStr, per);
+        if (venue === "yongyun") {
+          // 解析 dateStr 為 4/3 格式
+          const [yyyy, mm, dd] = day.dateStr.split("-");
+          const label = `${parseInt(mm)}/${parseInt(dd)}${per === "am" ? "早" : "午"}`;
+          yySessions.push({
+            dateStr: day.dateStr,
+            per,
+            label,
+            idx: per === "am" ? day.info.amIdx : day.info.pmIdx,
+          });
+        }
+      });
+    });
+
+    // 為每個人 × 每個場次計算狀態
+    const list = paidList.map(s => {
+      const row = {
+        "序號": s.seq,
+        "班級": s.cls,
+        "座號": s.num,
+        "姓名": s.name,
+        "年級": GRADE_NAMES[s.grade],
+      };
+      yySessions.forEach(sess => {
+        const dayData = attendance[sess.dateStr] || {};
+        const slot = dayData[sess.per] || {};
+        const ac = slot[s.seq];
+        const dayHasSolo = !!(dayData.am_solo?.[s.seq] || dayData.pm_solo?.[s.seq]);
+        // 計算費用顯示
+        if (ac === "present") {
+          row[sess.label] = dayHasSolo ? "個練" : `$${VENUE_FEE}`;
+        } else {
+          row[sess.label] = "─";
+        }
+      });
+      row["應收場次"] = s.yyPaid;
+      row["應收費用"] = `$${s.yyFee}`;
+      return row;
+    });
+
+    // 加合計行
+    const totalRow = {
       "序號": "",
       "班級": "",
       "座號": "",
       "姓名": "─ 合計 ─",
       "年級": "",
-      "早訓出席": list.reduce((a, r) => a + r["早訓出席"], 0),
-      "午訓出席": list.reduce((a, r) => a + r["午訓出席"], 0),
-      "應收場次": list.reduce((a, r) => a + r["應收場次"], 0),
-      "應收費用": list.reduce((a, r) => a + r["應收費用"], 0),
+    };
+    yySessions.forEach(sess => {
+      // 計算這場次有多少人應收
+      let cnt = 0;
+      paidList.forEach(s => {
+        const dayData = attendance[sess.dateStr] || {};
+        const slot = dayData[sess.per] || {};
+        const ac = slot[s.seq];
+        const dayHasSolo = !!(dayData.am_solo?.[s.seq] || dayData.pm_solo?.[s.seq]);
+        if (ac === "present" && !dayHasSolo) cnt++;
+      });
+      totalRow[sess.label] = `${cnt}人 $${cnt * VENUE_FEE}`;
     });
+    totalRow["應收場次"] = paidList.reduce((a, s) => a + s.yyPaid, 0);
+    totalRow["應收費用"] = `$${paidList.reduce((a, s) => a + s.yyFee, 0)}`;
+    list.push(totalRow);
+
     const ws = XLSX.utils.json_to_sheet(list, { origin: "A6" });
+    const headerColCount = 5 + yySessions.length + 2; // 5 基本 + N 場次 + 2 合計
     XLSX.utils.sheet_add_aoa(ws, [
       [`${Y} 年 ${M + 1} 月 永運費用統計（應收）`],
       [`本月永運場次：早訓 ${yyStats.yyAmSessions} 場 + 午訓 ${yyStats.yyPmSessions} 場 = 共 ${yyStats.yyAmSessions + yyStats.yyPmSessions} 場`],
-      [`每場次費用：$${VENUE_FEE} / 人 / 次`],
+      [`每場次費用：$${VENUE_FEE} / 人 / 次　·　個練免費（當日任一場勾個練 → 整天免費）`],
       [`應收人數：${yyStats.paidPeople} 人 · 應收人次：${yyStats.totalAttendees} · 應收費用：$${yyStats.totalFee}`],
       [],
     ], { origin: "A1" });
     ws["!cols"] = [
       { wch: 6 }, { wch: 8 }, { wch: 6 }, { wch: 12 }, { wch: 8 },
-      { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 12 },
+      ...yySessions.map(() => ({ wch: 8 })), // 每場次欄位寬度
+      { wch: 10 }, { wch: 12 },
     ];
     ws["!merges"] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
-      { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } },
-      { s: { r: 2, c: 0 }, e: { r: 2, c: 8 } },
-      { s: { r: 3, c: 0 }, e: { r: 3, c: 8 } },
+      { s: { r: 0, c: 0 }, e: { r: 0, c: headerColCount - 1 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: headerColCount - 1 } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: headerColCount - 1 } },
+      { s: { r: 3, c: 0 }, e: { r: 3, c: headerColCount - 1 } },
     ];
     XLSX.utils.book_append_sheet(wb, ws, "應收費用");
 
@@ -3596,9 +3645,12 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
             </div>
           ) : (
             <>
-              <div className="px-3 sm:px-4 py-2 text-[10px] tk-l"
+              <div className="px-3 sm:px-4 py-2 text-[10px] tk-l flex items-center gap-2 flex-wrap"
                    style={{ background: "rgba(168, 85, 24, 0.1)", color: VENUES.yongyun.color, fontWeight: 700 }}>
-                ■ 應收費用清單
+                <span>■ 應收費用清單</span>
+                <span style={{ fontWeight: 500, fontSize: "10px", letterSpacing: "0.02em", opacity: 0.85 }}>
+                  （詳細場次請下載 Excel）
+                </span>
               </div>
               <div className="grid items-center gap-2 px-3 sm:px-4 py-2 text-[10px] tk-l"
                    style={{ background: VENUES.yongyun.color, color: "#fff",
