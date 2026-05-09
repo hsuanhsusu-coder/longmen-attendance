@@ -1630,6 +1630,7 @@ function AttendanceApp({ user }) {
               setTab={setTab} setPeriod={setPeriod}
               screenshotMode={screenshotMode} setScreenshotMode={setScreenshotMode}
               Y={Y} M={M} MONTH_DAYS={MONTH_DAYS} TRAINING_DAYS={TRAINING_DAYS}
+              isAdmin={isAdmin}
             />
           )}
           {tab === "monthly" && (
@@ -3137,7 +3138,7 @@ function DayNoteSection({ dayNote, setDayNote, locked }) {
 
 // ============ DAILY VIEW ============
 function DailyView({ selectedDate, setSelectedDate, attendance, setTab, setPeriod, screenshotMode, setScreenshotMode,
-                     Y, M, MONTH_DAYS, TRAINING_DAYS }) {
+                    Y, M, MONTH_DAYS, TRAINING_DAYS, isAdmin }) {
   const { roster } = useRoster();
   const [showCalendar, setShowCalendar] = useState(false);
   const [groupBy, setGroupBy] = useState("grade");
@@ -3282,12 +3283,14 @@ function DailyView({ selectedDate, setSelectedDate, attendance, setTab, setPerio
               <RotateCcw size={11} strokeWidth={2.5} />
               回今天
             </button>
-            <button onClick={exportDay}
-                    className="btn-tactile flex items-center gap-1 text-[10px] sm:text-xs px-2.5 py-1 rounded-md border"
-                    style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
-              <Download size={12} strokeWidth={2.5} />
-              匯出當日
-            </button>
+            {isAdmin && (
+              <button onClick={exportDay}
+                      className="btn-tactile flex items-center gap-1 text-[10px] sm:text-xs px-2.5 py-1 rounded-md border"
+                      style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+                <Download size={12} strokeWidth={2.5} />
+                匯出當日
+              </button>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -3842,6 +3845,7 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS,
 
 function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendance, isAdmin }) {
   const [expanded, setExpanded] = useState(false);
+  const [expandedPerson, setExpandedPerson] = useState(null);  // 點人名展開該人的場次明細
   // 應收名單：有應收費用的人（排除整月都個練的人）
   // 應收清單：所有隊員都列出（依名冊順序），沒永運費的顯示 0
   const paidList = useMemo(() =>
@@ -4081,30 +4085,116 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
               </div>
               {paidList.map(s => {
                 const noFee = s.yyPaid === 0;
+                const isExpanded = expandedPerson === s.seq;
                 return (
-                  <div key={s.seq} className="grid items-center gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm"
-                       style={{
-                         gridTemplateColumns: "32px 1fr 50px 50px 60px 70px",
-                         borderBottom: "1px solid rgba(168, 85, 24, 0.15)",
-                         opacity: noFee ? 0.45 : 1,
-                       }}>
-                    <span className="num text-[11px]" style={{ color: VENUES.yongyun.color, opacity: 0.7 }}>
-                      {pad(s.seq)}
-                    </span>
-                    <div className="min-w-0">
-                      <div className="font-medium truncate" style={{ color: "var(--ink)" }}>{s.name}</div>
-                      <div className="num text-[10px]" style={{ color: VENUES.yongyun.color, opacity: 0.7 }}>
-                        {s.cls}-{pad(s.num)}
+                  <div key={s.seq}>
+                    <div onClick={() => !noFee && setExpandedPerson(isExpanded ? null : s.seq)}
+                         className="grid items-center gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm"
+                         style={{
+                           gridTemplateColumns: "32px 1fr 50px 50px 60px 70px",
+                           borderBottom: "1px solid rgba(168, 85, 24, 0.15)",
+                           opacity: noFee ? 0.45 : 1,
+                           cursor: noFee ? "default" : "pointer",
+                           background: isExpanded ? "rgba(168, 85, 24, 0.08)" : "transparent",
+                           transition: "background 0.15s",
+                         }}>
+                      <span className="num text-[11px]" style={{ color: VENUES.yongyun.color, opacity: 0.7 }}>
+                        {pad(s.seq)}
+                      </span>
+                      <div className="min-w-0 flex items-center gap-1">
+                        {!noFee && (
+                          <span style={{ color: VENUES.yongyun.color, fontSize: 10, opacity: 0.7 }}>
+                            {isExpanded ? "▾" : "▸"}
+                          </span>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium truncate" style={{ color: "var(--ink)" }}>{s.name}</div>
+                          <div className="num text-[10px]" style={{ color: VENUES.yongyun.color, opacity: 0.7 }}>
+                            {s.cls}-{pad(s.num)}
+                          </div>
+                        </div>
                       </div>
+                      <span className="num text-center" style={{ color: "var(--ink-2)" }}>{s.yyAmPaid}</span>
+                      <span className="num text-center" style={{ color: "var(--ink-2)" }}>{s.yyPmPaid}</span>
+                      <span className="num text-center font-bold" style={{ color: VENUES.yongyun.color }}>
+                        {s.yyPaid}
+                      </span>
+                      <span className="num text-right font-bold" style={{ color: VENUES.yongyun.color }}>
+                        ${s.yyFee}
+                      </span>
                     </div>
-                    <span className="num text-center" style={{ color: "var(--ink-2)" }}>{s.yyAmPaid}</span>
-                    <span className="num text-center" style={{ color: "var(--ink-2)" }}>{s.yyPmPaid}</span>
-                    <span className="num text-center font-bold" style={{ color: VENUES.yongyun.color }}>
-                      {s.yyPaid}
-                    </span>
-                    <span className="num text-right font-bold" style={{ color: VENUES.yongyun.color }}>
-                      ${s.yyFee}
-                    </span>
+                    {/* 展開的場次明細 */}
+                    {isExpanded && !noFee && (
+                      <div className="px-3 sm:px-4 py-3"
+                           style={{
+                             background: "rgba(168, 85, 24, 0.05)",
+                             borderBottom: `1px solid ${VENUES.yongyun.color}`,
+                           }}>
+                        <div className="text-[10px] tk-l mb-2" style={{ color: VENUES.yongyun.color, fontWeight: 700 }}>
+                          {s.name} · {s.yyPaid} 場應收 · ${s.yyFee}
+                        </div>
+                        <div className="space-y-1">
+                          {(() => {
+                            // 收集這個人所有的永運出席場次
+                            const sessions = [];
+                            TRAINING_DAYS.forEach(day => {
+                              const dayData = attendance[day.dateStr] || {};
+                              const dayHasSolo = !!(dayData.am_solo?.[s.seq] || dayData.pm_solo?.[s.seq]);
+                              ["am", "pm"].forEach(per => {
+                                const venue = getVenue(attendance, day.dateStr, per);
+                                if (venue !== "yongyun") return;
+                                const ac = dayData[per]?.[s.seq];
+                                if (ac !== "present") return;
+                                const isSolo = !!(per === "am" ? dayData.am_solo?.[s.seq] : dayData.pm_solo?.[s.seq]);
+                                const [yyyy, mm, dd] = day.dateStr.split("-");
+                                const dt = new Date(parseInt(yyyy), parseInt(mm) - 1, parseInt(dd));
+                                const dowName = ["日", "一", "二", "三", "四", "五", "六"][dt.getDay()];
+                                sessions.push({
+                                  dateStr: day.dateStr,
+                                  label: `${parseInt(mm)}/${parseInt(dd)}（${dowName}）`,
+                                  per,
+                                  perLabel: per === "am" ? "早" : "午",
+                                  fee: dayHasSolo ? 0 : VENUE_FEE,
+                                  isSolo: dayHasSolo,
+                                });
+                              });
+                            });
+                            if (sessions.length === 0) {
+                              return (
+                                <div className="text-[11px] italic" style={{ color: VENUES.yongyun.color, opacity: 0.6 }}>
+                                  無應收場次
+                                </div>
+                              );
+                            }
+                            return sessions.map((sess, i) => (
+                              <div key={i} className="flex items-center gap-2 text-[11px] sm:text-xs px-2 py-1 rounded"
+                                   style={{ background: "rgba(255,255,255,0.6)" }}>
+                                <span className="num" style={{ color: "var(--ink-2)", minWidth: 70 }}>
+                                  {sess.label}
+                                </span>
+                                <span className="font-medium" style={{
+                                  color: sess.per === "am" ? "#E07B30" : "#7C4DBC",
+                                  minWidth: 24,
+                                }}>
+                                  {sess.perLabel}
+                                </span>
+                                <span className="flex-1" />
+                                {sess.isSolo ? (
+                                  <span className="num text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                        style={{ background: "var(--purple-bg, #EFE4F8)", color: "#7C4DBC" }}>
+                                    個練免費
+                                  </span>
+                                ) : (
+                                  <span className="num font-bold" style={{ color: VENUES.yongyun.color }}>
+                                    ${sess.fee}
+                                  </span>
+                                )}
+                              </div>
+                            ));
+                          })()}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
