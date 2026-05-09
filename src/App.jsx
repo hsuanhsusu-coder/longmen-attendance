@@ -3390,11 +3390,11 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
   const [expanded, setExpanded] = useState(false);
   // 應收名單：有應收費用的人（排除整月都個練的人）
   const paidList = useMemo(() =>
-    [...personStats].filter(s => s.yyPaid > 0).sort((a, b) => b.yyFee - a.yyFee || a.seq - b.seq),
+    [...personStats].filter(s => s.yyPaid > 0).sort((a, b) => a.seq - b.seq),
     [personStats]);
   // 個練名單：有個練場次的人
   const soloList = useMemo(() =>
-    [...personStats].filter(s => s.soloTotal > 0).sort((a, b) => b.soloTotal - a.soloTotal || a.seq - b.seq),
+    [...personStats].filter(s => s.soloTotal > 0).sort((a, b) => a.seq - b.seq),
     [personStats]);
 
   const exportFee = () => {
