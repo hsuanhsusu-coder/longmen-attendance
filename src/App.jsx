@@ -2752,8 +2752,10 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
         );
       })()}
 
-      {/* 整日備註 */}
-      <DayNoteSection dayNote={dayNote} setDayNote={setDayNote} locked={locked} />
+      {/* 整日備註 - 只給管理員 */}
+      {isAdmin && (
+        <DayNoteSection dayNote={dayNote} setDayNote={setDayNote} locked={locked} />
+      )}
 
       {stats.bonus > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -2790,35 +2792,37 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
             );
           })}
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <button onClick={exportSession}
-                  className="btn-tactile flex items-center gap-1 text-xs sm:text-sm px-3 py-1.5 rounded-full border"
-                  style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
-            <Download size={13} strokeWidth={2.5} />
-            匯出本場
-          </button>
-          <button onClick={handleReset}
-                  className="btn-tactile flex items-center gap-1 text-xs sm:text-sm px-3 py-1.5 rounded-full border-2"
-                  style={{
-                    borderColor: resetConfirm ? "var(--red)" : "var(--line-strong)",
-                    background: resetConfirm ? "var(--red)" : "transparent",
-                    color: resetConfirm ? "#fff" : "var(--ink-2)",
-                  }}>
-            <RotateCcw size={13} strokeWidth={2.5} />
-            {resetConfirm ? "確定重設？" : "重設本場"}
-          </button>
-          <button onClick={markAllPresent} disabled={stats.pending === 0}
-                  className="btn-tactile flex items-center gap-1.5 text-xs sm:text-sm px-3 py-1.5 rounded-full border-2 font-medium"
-                  style={{
-                    borderColor: stats.pending === 0 ? "var(--line)" : "var(--green)",
-                    background: stats.pending === 0 ? "transparent" : "var(--green)",
-                    color: stats.pending === 0 ? "var(--mute)" : "#fff",
-                    cursor: stats.pending === 0 ? "not-allowed" : "pointer",
-                  }}>
-            <Zap size={13} strokeWidth={2.5} />
-            一鍵全到
-          </button>
-        </div>
+        {isAdmin && (
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={exportSession}
+                    className="btn-tactile flex items-center gap-1 text-xs sm:text-sm px-3 py-1.5 rounded-full border"
+                    style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+              <Download size={13} strokeWidth={2.5} />
+              匯出本場
+            </button>
+            <button onClick={handleReset}
+                    className="btn-tactile flex items-center gap-1 text-xs sm:text-sm px-3 py-1.5 rounded-full border-2"
+                    style={{
+                      borderColor: resetConfirm ? "var(--red)" : "var(--line-strong)",
+                      background: resetConfirm ? "var(--red)" : "transparent",
+                      color: resetConfirm ? "#fff" : "var(--ink-2)",
+                    }}>
+              <RotateCcw size={13} strokeWidth={2.5} />
+              {resetConfirm ? "確定重設？" : "重設本場"}
+            </button>
+            <button onClick={markAllPresent} disabled={stats.pending === 0}
+                    className="btn-tactile flex items-center gap-1.5 text-xs sm:text-sm px-3 py-1.5 rounded-full border-2 font-medium"
+                    style={{
+                      borderColor: stats.pending === 0 ? "var(--line)" : "var(--green)",
+                      background: stats.pending === 0 ? "transparent" : "var(--green)",
+                      color: stats.pending === 0 ? "var(--mute)" : "#fff",
+                      cursor: stats.pending === 0 ? "not-allowed" : "pointer",
+                    }}>
+              <Zap size={13} strokeWidth={2.5} />
+              一鍵全到
+            </button>
+          </div>
+        )}
       </section>
 
       {currentVenue === "closed" ? (
@@ -2857,7 +2861,7 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
               <div className="flex-1 border-b border-dashed" style={{ borderColor: "var(--line-strong)" }} />
             </div>
             <div className="space-y-2">
-              {g.members.map(m => <CallRow key={m.seq} m={m} mark={mark} markLate={markLate} markSolo={markSolo} setPersonNote={setPersonNote} isYongyun={currentVenue === "yongyun"} />)}
+              {g.members.map(m => <CallRow key={m.seq} m={m} mark={mark} markLate={markLate} markSolo={markSolo} setPersonNote={setPersonNote} isYongyun={currentVenue === "yongyun"} isAdmin={isAdmin} />)}
             </div>
           </div>
         ))}
@@ -2886,7 +2890,7 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
   );
 }
 
-function CallRow({ m, mark, markLate, markSolo, setPersonNote, isYongyun }) {
+function CallRow({ m, mark, markLate, markSolo, setPersonNote, isYongyun, isAdmin }) {
   const isPresent = m.actual === "present";
   const isAbsent = m.actual === "absent";
   const [showNote, setShowNote] = useState(!!m.note);
@@ -2988,30 +2992,32 @@ function CallRow({ m, mark, markLate, markSolo, setPersonNote, isYongyun }) {
             )}
           </div>
         </div>
-        <div className="flex gap-1 sm:gap-1.5 shrink-0">
-          <button onClick={() => mark(m.seq, "present")}
-                  className="btn-tactile w-9 h-9 sm:w-11 sm:h-11 rounded-lg flex items-center justify-center"
-                  style={{
-                    background: isPresent ? "var(--green)" : "transparent",
-                    color: isPresent ? "#fff" : "var(--green)",
-                    border: `2px solid var(--green)`,
-                  }} title="出席">
-            <Check size={18} strokeWidth={3.5} />
-          </button>
-          <button onClick={() => mark(m.seq, "absent")}
-                  className="btn-tactile w-9 h-9 sm:w-11 sm:h-11 rounded-lg flex items-center justify-center"
-                  style={{
-                    background: isAbsent ? "var(--red)" : "transparent",
-                    color: isAbsent ? "#fff" : "var(--red)",
-                    border: `2px solid var(--red)`,
-                  }} title="未到">
-            <X size={18} strokeWidth={3.5} />
-          </button>
-        </div>
+        {isAdmin && (
+          <div className="flex gap-1 sm:gap-1.5 shrink-0">
+            <button onClick={() => mark(m.seq, "present")}
+                    className="btn-tactile w-9 h-9 sm:w-11 sm:h-11 rounded-lg flex items-center justify-center"
+                    style={{
+                      background: isPresent ? "var(--green)" : "transparent",
+                      color: isPresent ? "#fff" : "var(--green)",
+                      border: `2px solid var(--green)`,
+                    }} title="出席">
+              <Check size={18} strokeWidth={3.5} />
+            </button>
+            <button onClick={() => mark(m.seq, "absent")}
+                    className="btn-tactile w-9 h-9 sm:w-11 sm:h-11 rounded-lg flex items-center justify-center"
+                    style={{
+                      background: isAbsent ? "var(--red)" : "transparent",
+                      color: isAbsent ? "#fff" : "var(--red)",
+                      border: `2px solid var(--red)`,
+                    }} title="未到">
+              <X size={18} strokeWidth={3.5} />
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* 出席時的次要標記列：遲到 + 個練（永運場才有個練） */}
-      {isPresent && (
+      {/* 出席時的次要標記列：遲到 + 個練（永運場才有個練）— 訪客不顯示 */}
+      {isPresent && isAdmin && (
         <div className="flex items-center gap-3 ml-7 flex-wrap">
           <button onClick={() => markLate(m.seq)}
                   className="btn-tactile flex items-center gap-1.5 px-2 py-1 rounded text-[11px] sm:text-xs font-medium"
@@ -3047,8 +3053,8 @@ function CallRow({ m, mark, markLate, markSolo, setPersonNote, isYongyun }) {
         </div>
       )}
 
-      {/* 對「未到 / 未點名」也允許加備註 */}
-      {!isPresent && !showNote && m.status !== "pending_excused" && (
+      {/* 對「未到 / 未點名」也允許加備註 — 訪客不顯示 */}
+      {!isPresent && !showNote && m.status !== "pending_excused" && isAdmin && (
         <div className="ml-7">
           <button onClick={() => setShowNote(true)}
                   className="btn-tactile text-[11px] sm:text-xs px-2 py-1 rounded"
