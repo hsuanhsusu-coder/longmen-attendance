@@ -4580,7 +4580,7 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
         display: "grid",
         gridTemplateColumns: "3px 18px 1fr 16px 16px",
         alignItems: "center", gap: 4,
-        padding: "3px 6px",
+        padding: "5px 6px",
         borderBottom: "1px solid #EAE3D4",
         opacity: dim,
         background: rowBg,
@@ -4593,6 +4593,8 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
           fontSize: 12, fontWeight: hasNoShow ? 700 : 500,
           color: hasNoShow ? "#7A1F0F" : "#141210",
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          lineHeight: 1.5,
+          padding: "1px 0",
         }}>
           {m.name}
           {hasNote && (
