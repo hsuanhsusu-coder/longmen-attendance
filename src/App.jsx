@@ -1114,16 +1114,13 @@ function AttendanceApp({ user }) {
   const setSwimStats = async (updater) => {
     const next = typeof updater === "function" ? updater(swimStats) : updater;
     setSwimStatsLocal(next);
-    try {
-      const ref = doc(db, "teams", "longmen", "data", "swim_stats");
-      await setDoc(ref, {
-        ...next,
-        _version: new Date().toISOString(),
-        updatedBy: user.email,
-      });
-    } catch (e) {
-      console.error("Save swim_stats failed:", e);
-    }
+    const ref = doc(db, "teams", "longmen", "data", "swim_stats");
+    await setDoc(ref, {
+      ...next,
+      _version: new Date().toISOString(),
+      updatedBy: user.email,
+    });
+    // 寫入失敗會 throw 出去,讓呼叫者（如 SwimStatsImporter）能 catch 並顯示錯誤
   };
 
   const userEmail = (user.email || "").toLowerCase();
