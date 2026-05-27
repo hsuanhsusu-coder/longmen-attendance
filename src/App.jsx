@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, createContext, useContext } from "react";
-import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
+import { onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, signOut } from "firebase/auth";
 import { doc, onSnapshot, setDoc, getDoc, collection, addDoc, query, orderBy, limit, getDocs, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db, googleProvider } from "./firebase";
 import * as XLSX from "xlsx";
@@ -967,6 +967,18 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
+    // 處理 iOS Safari redirect 登入回傳結果
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result?.user) {
+          // 登入成功，onAuthStateChanged 會接管
+          console.log("Redirect 登入成功:", result.user.email);
+        }
+      })
+      .catch((err) => {
+        console.error("Redirect 登入錯誤:", err);
+      });
+
     return onAuthStateChanged(auth, (u) => {
       setUser(u);
       setAuthLoading(false);
@@ -5317,13 +5329,34 @@ function LoginScreen() {
     setSigning(true);
     setError(null);
     try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (err) {
-      console.error(err);
-      if (err.code === "auth/popup-closed-by-user") {
-        setError(null);
+      // 偵測 iOS Safari / in-app browser → 用 redirect（popup 在 iOS 不穩）
+      const ua = navigator.userAgent || "";
+      const isIOS = /iPad|iPhone|iPod/.test(ua);
+      const isSafari = /^((?!chrome|android|crios|fxios).)*safari/i.test(ua);
+      const isInAppBrowser = /FB_IAB|FBAN|Instagram|Line/i.test(ua);
+      const useRedirect = isIOS || (isIOS && isSafari) || isInAppBrowser;
+
+      if (useRedirect) {
+        // 整頁跳轉模式（iOS / LINE / FB / IG）
+        await signInWithRedirect(auth, googleProvider);
+        // 不會 return,頁面會跳走
       } else {
-        setError(err.message || "登入失敗");
+        // 彈窗模式（桌面、Android Chrome 等）
+        await signInWithPopup(auth, googleProvider);
+      }
+    } catch (err) {
+      console.error("登入錯誤:", err);
+      if (err.code === "auth/popup-closed-by-user" || err.code === "auth/cancelled-popup-request") {
+        setError(null);
+      } else if (err.code === "auth/popup-blocked") {
+        // Popup 被擋,嘗試 redirect
+        try {
+          await signInWithRedirect(auth, googleProvider);
+        } catch (e2) {
+          setError("登入失敗，請改用 Chrome 瀏覽器");
+        }
+      } else {
+        setError(err.message || "登入失敗，請改用 Chrome 瀏覽器");
       }
     } finally {
       setSigning(false);
@@ -5375,15 +5408,25 @@ function LoginScreen() {
           {error && (
             <div className="mt-3 px-3 py-2 rounded-md text-xs"
                  style={{ background: "var(--red-bg)", color: "var(--red)", border: "1px solid var(--red)" }}>
-              {error}
+              <div className="font-bold mb-1">{error}</div>
+              <div className="text-[10px] opacity-80">
+                如果你用 iPhone Safari 出現問題：<br/>
+                1. 請從 LINE/IG 等 App 內開的連結 → 改用 Safari/Chrome 開啟<br/>
+                2. 或改用 Chrome 瀏覽器試試
+              </div>
             </div>
           )}
 
           <p className="text-[11px] text-center mt-4 leading-relaxed"
              style={{ color: "var(--mute)" }}>
-            僅限龍門國中泳隊教練 / 老師使用<br />
+            僅限龍門國中泳隊教練 / 家長使用<br />
             登入後即可雲端同步點名紀錄
           </p>
+
+          <div className="mt-3 px-3 py-2 rounded text-[10px]"
+               style={{ background: "var(--panel-2)", color: "var(--mute)" }}>
+            📱 <span className="font-medium">iPhone 用戶提示：</span>登入時系統會跳到 Google 登入頁面，登入完成後會自動回到本系統。請不要關閉視窗。
+          </div>
         </div>
 
         <div className="text-center mt-6 text-[10px] tk-l" style={{ color: "var(--mute)" }}>
