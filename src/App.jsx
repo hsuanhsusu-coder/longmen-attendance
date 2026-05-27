@@ -4436,6 +4436,7 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
   const cardRef = useRef(null);  // ref 標記要截圖的卡片
   const [sharing, setSharing] = useState(false);
   const [shareHint, setShareHint] = useState("");
+  const [shareSuccess, setShareSuccess] = useState(false);  // 分享成功 → 顯示打開 LINE 按鈕
   const dateInfo = getDateInfo(selectedDate);
   const amAtt = attendance[selectedDate]?.am || {};
   const pmAtt = attendance[selectedDate]?.pm || {};
@@ -4667,7 +4668,8 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
                     title: `龍門泳隊 ${yyyy}/${mm}/${dd}`,
                   });
                   setShareHint("✓ 分享完成");
-                  setTimeout(() => setShareHint(""), 2000);
+                  setShareSuccess(true);
+                  setTimeout(() => { setShareHint(""); setShareSuccess(false); }, 8000);
                   return;
                 } catch (e) {
                   // 使用者取消 → 不顯示錯誤
@@ -4689,7 +4691,8 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
               document.body.removeChild(a);
               setTimeout(() => URL.revokeObjectURL(url), 1000);
               setShareHint("✓ 圖片已下載");
-              setTimeout(() => setShareHint(""), 3000);
+              setShareSuccess(true);
+              setTimeout(() => { setShareHint(""); setShareSuccess(false); }, 8000);
             } catch (e) {
               console.error("分享失敗", e);
               setShareHint("⚠ 失敗,請重試");
@@ -4726,13 +4729,38 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
       </div>
 
       {shareHint && (
-        <div className="fixed top-14 left-1/2 z-50 px-4 py-2 rounded-full text-sm font-medium shadow-lg"
+        <div className="fixed top-14 left-1/2 z-50 shadow-lg rounded-xl"
              style={{
                transform: "translateX(-50%)",
                background: shareHint.startsWith("✓") ? "#1F5C3A" : "#B23A28",
                color: "#fff",
+               minWidth: 260,
+               maxWidth: "calc(100% - 32px)",
+               padding: shareSuccess ? "10px 14px" : "8px 16px",
              }}>
-          {shareHint}
+          <div className="flex items-center justify-center gap-2 text-sm font-medium">
+            {shareHint}
+          </div>
+          {shareSuccess && (
+            <>
+              <div className="text-[11px] mt-1 mb-2 opacity-90 text-center">
+                訊息已傳送。要繼續傳給其他人嗎？
+              </div>
+              <div className="flex gap-2">
+                <a href="line://" onClick={() => { setShareHint(""); setShareSuccess(false); }}
+                   className="btn-tactile flex-1 flex items-center justify-center gap-1 px-3 py-2 rounded-lg text-xs font-bold"
+                   style={{ background: "#fff", color: "#06C755" }}>
+                  <span style={{ fontSize: 13 }}>💬</span>
+                  打開 LINE
+                </a>
+                <button onClick={() => { setShareHint(""); setShareSuccess(false); }}
+                        className="btn-tactile px-3 py-2 rounded-lg text-xs font-medium"
+                        style={{ background: "rgba(255,255,255,0.2)", color: "#fff" }}>
+                  關閉
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
