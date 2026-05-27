@@ -8136,13 +8136,15 @@ function ProgressChart({ name, swimStats, pbMap, pbEvents }) {
 
 // === 折線圖 SVG ===
 function ChartSVG({ dataPoints, trend }) {
-  // SVG 尺寸
-  const W = 600;
-  const H = 280;
-  const padL = 50;
-  const padR = 20;
+  const [hovered, setHovered] = useState(null);
+
+  // SVG 尺寸 - 拉大讓空間更足
+  const W = 700;
+  const H = 360;
+  const padL = 60;
+  const padR = 30;
   const padT = 30;
-  const padB = 60;
+  const padB = 110;  // 底下留更多空間給比賽名
   const chartW = W - padL - padR;
   const chartH = H - padT - padB;
 
@@ -8151,13 +8153,12 @@ function ChartSVG({ dataPoints, trend }) {
   const minT = Math.min(...times);
   const maxT = Math.max(...times);
   const range = maxT - minT;
-  // 上下緩衝 10%
-  const padding = range * 0.15 || 1;
+  const padding = range * 0.2 || 1;
   const yMin = minT - padding;
   const yMax = maxT + padding;
 
   // x: 平均分配，y: 反轉（小秒數=高位置）
-  const getX = (i) => padL + (chartW * i) / (dataPoints.length - 1);
+  const getX = (i) => padL + (chartW * i) / (Math.max(dataPoints.length - 1, 1));
   const getY = (time) => padT + chartH * ((time - yMin) / (yMax - yMin));
 
   // 折線 path
@@ -8165,12 +8166,26 @@ function ChartSVG({ dataPoints, trend }) {
     `${i === 0 ? "M" : "L"} ${getX(i)} ${getY(p.time)}`
   ).join(" ");
 
-  // Y 軸刻度（4 條水平線）
+  // 漸層填色 path（折線到底部）
+  const fillPath = linePath +
+    ` L ${getX(dataPoints.length - 1)} ${padT + chartH}` +
+    ` L ${getX(0)} ${padT + chartH} Z`;
+
+  // Y 軸刻度（5 條水平線，看起來更密）
   const yTicks = [];
-  for (let i = 0; i <= 3; i++) {
-    const t = yMin + (yMax - yMin) * (i / 3);
-    yTicks.push({ time: t, y: padT + chartH * (i / 3) });
+  for (let i = 0; i <= 4; i++) {
+    const t = yMin + (yMax - yMin) * (i / 4);
+    yTicks.push({ time: t, y: padT + chartH * (i / 4) });
   }
+
+  // 縮短比賽名稱（取後段，例如 "115年全中運" → "全中運"）
+  const shortenMeet = (name) => {
+    // 移除「年」前面的數字（如「113年市中運」→「市中運」）
+    const m = name.match(/年(.+)$/);
+    if (m) return m[1];
+    if (name.length > 6) return name.slice(0, 6) + "…";
+    return name;
+  };
 
   return (
     <div className="rounded-lg p-3 border"
@@ -8181,7 +8196,7 @@ function ChartSVG({ dataPoints, trend }) {
           <div className="text-xs" style={{ color: "var(--mute)" }}>
             第一場 → 最後一場
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="num text-xs" style={{ color: "var(--ink-2)" }}>
               {formatTime(dataPoints[0].time)} → {formatTime(dataPoints[dataPoints.length - 1].time)}
             </span>
@@ -8198,54 +8213,59 @@ function ChartSVG({ dataPoints, trend }) {
       )}
 
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }}>
+        {/* 漸層定義 */}
+        <defs>
+          <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--accent-2)" stopOpacity="0.15" />
+            <stop offset="100%" stopColor="var(--accent-2)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
         {/* Y 軸刻度線 + 標籤 */}
         {yTicks.map((tk, i) => (
           <g key={i}>
             <line x1={padL} y1={tk.y} x2={W - padR} y2={tk.y}
-                  stroke="var(--line)" strokeWidth={1} strokeDasharray={i === 3 ? "" : "3,3"} />
-            <text x={padL - 8} y={tk.y + 4} textAnchor="end"
+                  stroke="var(--line)" strokeWidth={1} strokeDasharray={i === 4 ? "" : "3,3"} />
+            <text x={padL - 10} y={tk.y + 4} textAnchor="end"
                   fontSize={11} fill="var(--mute)" className="num">
               {formatTime(tk.time)}
             </text>
           </g>
         ))}
 
-        {/* Y 軸標示「快 ↑」「慢 ↓」 */}
-        <text x={padL - 35} y={padT + 6} fontSize={10} fill="var(--green)" fontWeight="bold">↑ 快</text>
-        <text x={padL - 35} y={padT + chartH - 2} fontSize={10} fill="#B23A28" fontWeight="bold">↓ 慢</text>
+        {/* Y 軸標示「快 ↑」「慢 ↓」 - 放在圖外左側上方 */}
+        <text x={padL} y={padT - 14} fontSize={10} fill="var(--green)" fontWeight="bold">↑ 快 (秒數少)</text>
+        <text x={W - padR} y={padT - 14} fontSize={10} fill="#B23A28" fontWeight="bold" textAnchor="end">↓ 慢 (秒數多)</text>
+
+        {/* 漸層填色 */}
+        <path d={fillPath} fill="url(#chartGradient)" />
 
         {/* 折線 */}
         <path d={linePath} fill="none" stroke="var(--accent-2)" strokeWidth={2.5}
               strokeLinecap="round" strokeLinejoin="round" />
 
-        {/* 資料點 */}
-        {dataPoints.map((p, i) => (
-          <g key={i}>
-            <circle cx={getX(i)} cy={getY(p.time)} r={p.isPB ? 7 : 5}
-                    fill={p.isPB ? "var(--green)" : "var(--accent-2)"}
-                    stroke="#fff" strokeWidth={2} />
-            {/* PB 星號 */}
-            {p.isPB && (
-              <text x={getX(i)} y={getY(p.time) - 12} textAnchor="middle"
-                    fontSize={14} fill="var(--green)" fontWeight="bold">★</text>
-            )}
-            {/* 時間標籤 */}
-            <text x={getX(i)} y={getY(p.time) + (p.isPB ? 22 : 20)}
-                  textAnchor="middle" fontSize={10} fill="var(--ink)" fontWeight="bold" className="num">
-              {formatTime(p.time)}
-            </text>
-          </g>
-        ))}
-
-        {/* X 軸：比賽名（傾斜） */}
+        {/* 資料點 + 互動 */}
         {dataPoints.map((p, i) => {
           const cx = getX(i);
-          const cy = H - padB + 10;
+          const cy = getY(p.time);
+          const isHovered = hovered === i;
           return (
-            <g key={i} transform={`rotate(-30 ${cx} ${cy})`}>
-              <text x={cx} y={cy} textAnchor="end" fontSize={10} fill="var(--ink-2)">
-                {p.meet}
-              </text>
+            <g key={i}>
+              {/* 透明大圓 - 增加 hover 範圍 */}
+              <circle cx={cx} cy={cy} r={20} fill="transparent"
+                      onMouseEnter={() => setHovered(i)}
+                      onMouseLeave={() => setHovered(null)}
+                      style={{ cursor: "pointer" }} />
+              {/* PB 點：綠色雙圈 */}
+              {p.isPB && (
+                <circle cx={cx} cy={cy} r={10} fill="none"
+                        stroke="var(--green)" strokeWidth={1.5} opacity={0.4} />
+              )}
+              {/* 主圓點 */}
+              <circle cx={cx} cy={cy} r={p.isPB ? 6 : 4.5}
+                      fill={p.isPB ? "var(--green)" : "var(--accent-2)"}
+                      stroke="#fff" strokeWidth={2}
+                      style={{ pointerEvents: "none" }} />
             </g>
           );
         })}
@@ -8253,10 +8273,73 @@ function ChartSVG({ dataPoints, trend }) {
         {/* X 軸底線 */}
         <line x1={padL} y1={padT + chartH} x2={W - padR} y2={padT + chartH}
               stroke="var(--ink)" strokeWidth={1.5} />
+
+        {/* X 軸：比賽名（短版，直立 + 縮短） */}
+        {dataPoints.map((p, i) => {
+          const cx = getX(i);
+          const cy = padT + chartH + 12;
+          return (
+            <g key={`x-${i}`}>
+              {/* 連到資料點的虛線（淡） */}
+              <line x1={cx} y1={padT + chartH} x2={cx} y2={cy - 2}
+                    stroke="var(--line-strong)" strokeWidth={0.5} strokeDasharray="2,2" opacity={0.5} />
+              {/* PB 場次標 ★ 在 X 軸 */}
+              {p.isPB && (
+                <text x={cx} y={cy + 8} textAnchor="middle" fontSize={11} fill="var(--green)" fontWeight="bold">
+                  ★
+                </text>
+              )}
+              {/* 比賽名（直立 90 度避免重疊） */}
+              <text x={cx} y={cy + (p.isPB ? 22 : 10)}
+                    transform={`rotate(-45 ${cx} ${cy + (p.isPB ? 22 : 10)})`}
+                    textAnchor="end" fontSize={10} fill="var(--ink-2)">
+                {shortenMeet(p.meet)}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Hover Tooltip */}
+        {hovered !== null && dataPoints[hovered] && (() => {
+          const p = dataPoints[hovered];
+          const cx = getX(hovered);
+          const cy = getY(p.time);
+          const tipW = 130;
+          const tipH = 45;
+          // 防止 tooltip 超出邊界
+          let tipX = cx - tipW / 2;
+          if (tipX < padL) tipX = padL;
+          if (tipX + tipW > W - padR) tipX = W - padR - tipW;
+          // 預設 tooltip 在點上方，如果太擠就放下方
+          let tipY = cy - tipH - 15;
+          if (tipY < padT) tipY = cy + 15;
+          return (
+            <g style={{ pointerEvents: "none" }}>
+              {/* 連接線 */}
+              <line x1={cx} y1={cy} x2={cx} y2={tipY + (tipY < cy ? tipH : 0)}
+                    stroke="var(--ink)" strokeWidth={1} strokeDasharray="2,2" />
+              {/* 強調點 */}
+              <circle cx={cx} cy={cy} r={p.isPB ? 8 : 7}
+                      fill={p.isPB ? "var(--green)" : "var(--accent-2)"}
+                      stroke="#fff" strokeWidth={3} />
+              {/* Tooltip 框 */}
+              <rect x={tipX} y={tipY} width={tipW} height={tipH} rx={6}
+                    fill="var(--ink)" />
+              <text x={tipX + 8} y={tipY + 18} fontSize={11} fill="rgba(255,252,246,0.7)">
+                {p.meet}
+              </text>
+              <text x={tipX + 8} y={tipY + 36} fontSize={15}
+                    fontWeight="bold" fill="#fff" className="num">
+                {formatTime(p.time)}
+                {p.isPB && <tspan fill="var(--green-2)" fontWeight="bold"> ★ PB</tspan>}
+              </text>
+            </g>
+          );
+        })()}
       </svg>
 
       <div className="text-[10px] mt-1 text-center" style={{ color: "var(--mute)" }}>
-        ★ = 個人最佳 · 線往下表示時間減少（進步）
+        ★ = 個人最佳 · 點圖上資料點查看詳細 · 線往下表示時間減少（進步）
       </div>
     </div>
   );
