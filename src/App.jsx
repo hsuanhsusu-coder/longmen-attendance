@@ -933,6 +933,7 @@ const CSS = `
     background-color: var(--bg);
     color: var(--ink);
     font-family: 'Noto Sans TC', system-ui, -apple-system, sans-serif;
+    line-height: 1.5;
     min-height: 100vh;
     background-image:
       linear-gradient(to right, rgba(20,18,16,0.035) 1px, transparent 1px),
@@ -4592,9 +4593,11 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
         <span style={{
           fontSize: 12, fontWeight: hasNoShow ? 700 : 500,
           color: hasNoShow ? "#7A1F0F" : "#141210",
-          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-          lineHeight: 1.5,
-          padding: "1px 0",
+          whiteSpace: "nowrap",
+          minWidth: 0,
+          lineHeight: 1.6,
+          paddingBottom: 2,
+          display: "inline-block",
         }}>
           {m.name}
           {hasNote && (
@@ -4747,7 +4750,7 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
               <div className="flex items-center gap-2">
                 <TeamBadge size={28} />
                 <div>
-                  <div className="display-cn" style={{ fontSize: 16, fontWeight: 900, lineHeight: 1.1 }}>
+                  <div className="display-cn" style={{ fontSize: 16, fontWeight: 900, lineHeight: 1.4 }}>
                     {selectedDate.split("-").slice(1).join("/")}
                     <span style={{ color: "#2DBFA8", marginLeft: 6, fontSize: 13, fontWeight: 700 }}>
                       {dateInfo.dayLabel}
@@ -4766,10 +4769,10 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
 
           {/* Compact stats - one line */}
           <div style={{
-            background: "#F8F3E8", padding: "6px 12px",
+            background: "#F8F3E8", padding: "8px 12px",
             borderBottom: "1px solid #DDD3BF",
             fontSize: 11, display: "flex", justifyContent: "space-around",
-            flexWrap: "wrap", gap: 8,
+            flexWrap: "wrap", gap: 8, lineHeight: 1.6,
           }}>
             <div className="flex items-center gap-1 flex-wrap">
               <Sun size={12} strokeWidth={2.5} style={{ color: "#2E2820" }} />
@@ -5091,7 +5094,7 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
           <div style={{
             background: "#1A3D4D", color: "#F2EDE2",
             display: "grid", gridTemplateColumns: "1fr 1fr",
-            fontSize: 9, letterSpacing: "0.1em",
+            fontSize: 9, letterSpacing: "0.1em", lineHeight: 1.5,
           }}>
             {[0, 1].map(i => (
               <div key={i} style={{
