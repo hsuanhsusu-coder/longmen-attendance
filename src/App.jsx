@@ -1704,6 +1704,7 @@ function AttendanceApp({ user }) {
               isAdmin={isAdmin}
               isOwner={isOwner}
               logAction={logAction}
+              user={user}
             />
           )}
           {tab === "calendar_editor" && (
@@ -7751,7 +7752,7 @@ const parseTime = (str) => {
   return isNaN(n) ? null : n;
 };
 
-function SwimStatsView({ swimStats, setSwimStats, swimStatsLoaded, isAdmin, isOwner, logAction }) {
+function SwimStatsView({ swimStats, setSwimStats, swimStatsLoaded, isAdmin, isOwner, logAction, user }) {
   const [subTab, setSubTab] = useState("swimmer");  // swimmer / event / meet
   const [selectedSwimmer, setSelectedSwimmer] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
@@ -7785,7 +7786,7 @@ function SwimStatsView({ swimStats, setSwimStats, swimStatsLoaded, isAdmin, isOw
                 目前還沒有比賽成績資料。<br/>
                 可以從原本的 swim-stats 系統匯出 JSON 後上傳。
               </p>
-              <SwimStatsImporter setSwimStats={setSwimStats} logAction={logAction} />
+              <SwimStatsImporter swimStats={swimStats} setSwimStats={setSwimStats} logAction={logAction} />
             </>
           ) : (
             <p className="text-sm" style={{ color: "var(--mute)" }}>
@@ -7828,6 +7829,9 @@ function SwimStatsView({ swimStats, setSwimStats, swimStatsLoaded, isAdmin, isOw
           { k: "swimmer", l: "選手", icon: User },
           { k: "event", l: "項目", icon: Trophy },
           { k: "meet", l: "比賽", icon: CalendarDays },
+          { k: "compare", l: "對比", icon: BarChart3 },
+          { k: "records", l: "紀錄", icon: FileText },
+          ...(isOwner ? [{ k: "input", l: "錄入", icon: Edit3 }] : []),
         ].map(t => {
           const active = subTab === t.k;
           const Ic = t.icon;
@@ -7837,6 +7841,7 @@ function SwimStatsView({ swimStats, setSwimStats, swimStatsLoaded, isAdmin, isOw
                     style={{
                       background: active ? "var(--ink)" : "transparent",
                       color: active ? "var(--bg)" : "var(--ink-2)",
+                      minWidth: 60,
                     }}>
               <Ic size={14} strokeWidth={2.5} />
               {t.l}
@@ -7867,6 +7872,20 @@ function SwimStatsView({ swimStats, setSwimStats, swimStatsLoaded, isAdmin, isOw
           setSelectedMeet={setSelectedMeet}
         />
       )}
+      {subTab === "compare" && (
+        <CompareView swimStats={swimStats} />
+      )}
+      {subTab === "records" && (
+        <RecordsView swimStats={swimStats} />
+      )}
+      {subTab === "input" && isOwner && (
+        <InputView
+          swimStats={swimStats}
+          setSwimStats={setSwimStats}
+          logAction={logAction}
+          user={user}
+        />
+      )}
 
       {/* 管理員的匯入工具 */}
       {isOwner && (
@@ -7877,7 +7896,7 @@ function SwimStatsView({ swimStats, setSwimStats, swimStatsLoaded, isAdmin, isOw
               ⚙️ 管理工具（主管理員）
             </summary>
             <div className="mt-3">
-              <SwimStatsImporter setSwimStats={setSwimStats} logAction={logAction} />
+              <SwimStatsImporter swimStats={swimStats} setSwimStats={setSwimStats} logAction={logAction} />
               {swimStats._version && (
                 <div className="text-[10px] mt-2" style={{ color: "var(--mute)" }}>
                   上次更新：{new Date(swimStats._version).toLocaleString("zh-TW")}
@@ -7986,6 +8005,9 @@ function SwimmerDetail({ name, swimStats }) {
         </div>
       </div>
 
+      {/* 進步曲線 */}
+      <ProgressChart name={name} swimStats={swimStats} pbMap={pbMap} pbEvents={pbEvents} />
+
       {/* 歷次比賽 */}
       <div>
         <div className="display-cn text-base mb-2" style={{ color: "var(--ink)" }}>
@@ -8024,7 +8046,225 @@ function SwimmerDetail({ name, swimStats }) {
   );
 }
 
-// === 項目排行 ===
+// === 進步曲線（SVG 折線圖） ===
+// 游泳邏輯：秒數越小越快，所以 Y 軸要「上面=快，下面=慢」
+// 也就是 SVG 的 Y 軸要反轉（畫面上 = 高分 = 低秒數）
+function ProgressChart({ name, swimStats, pbMap, pbEvents }) {
+  const [selectedEvent, setSelectedEvent] = useState(pbEvents[0] || null);
+
+  // 收集這個選手該項目的所有紀錄（按 meet 順序）
+  const dataPoints = useMemo(() => {
+    if (!selectedEvent) return [];
+    const records = swimStats.swimmers[name] || [];
+    const points = [];
+    // 按 swimStats.meets 的順序排列（不是 records 內部順序）
+    swimStats.meets.forEach((meetName, idx) => {
+      const r = records.find(x => x.meet === meetName);
+      if (r && r.results?.[selectedEvent] != null) {
+        points.push({
+          meet: meetName,
+          meetIdx: idx,
+          time: r.results[selectedEvent],
+          isPB: pbMap[selectedEvent]?.meet === meetName,
+        });
+      }
+    });
+    return points;
+  }, [selectedEvent, name, swimStats, pbMap]);
+
+  // 計算趨勢
+  const trend = useMemo(() => {
+    if (dataPoints.length < 2) return null;
+    const first = dataPoints[0].time;
+    const last = dataPoints[dataPoints.length - 1].time;
+    const diff = last - first;
+    return {
+      diff,
+      improved: diff < 0,  // 秒數減少 = 進步
+      pct: ((Math.abs(diff) / first) * 100).toFixed(1),
+    };
+  }, [dataPoints]);
+
+  if (pbEvents.length === 0) return null;
+
+  return (
+    <div>
+      <div className="display-cn text-base mb-2 flex items-center gap-2" style={{ color: "var(--ink)" }}>
+        <BarChart3 size={16} strokeWidth={2.5} style={{ color: "var(--accent-2)" }} />
+        <span>📈 進步曲線</span>
+      </div>
+
+      {/* 項目選擇 */}
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        {pbEvents.map(ev => {
+          const active = selectedEvent === ev;
+          return (
+            <button key={ev} onClick={() => setSelectedEvent(ev)}
+                    className="btn-tactile px-2.5 py-1 rounded-md text-xs font-medium border"
+                    style={{
+                      background: active ? "var(--accent-2)" : "transparent",
+                      color: active ? "#fff" : "var(--accent-2)",
+                      borderColor: "var(--accent-2)",
+                    }}>
+              {ev}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 圖表 */}
+      {dataPoints.length === 0 ? (
+        <div className="text-center py-6 text-sm" style={{ color: "var(--mute)" }}>
+          選擇項目查看進步曲線
+        </div>
+      ) : dataPoints.length === 1 ? (
+        <div className="rounded-lg p-4 border text-center"
+             style={{ background: "var(--bg)", borderColor: "var(--line)" }}>
+          <div className="text-sm mb-1" style={{ color: "var(--mute)" }}>
+            目前只有 1 場紀錄
+          </div>
+          <div className="num font-bold text-lg" style={{ color: "var(--ink)" }}>
+            {formatTime(dataPoints[0].time)}
+          </div>
+          <div className="text-xs" style={{ color: "var(--mute)" }}>
+            {dataPoints[0].meet}
+          </div>
+        </div>
+      ) : (
+        <ChartSVG dataPoints={dataPoints} trend={trend} />
+      )}
+    </div>
+  );
+}
+
+// === 折線圖 SVG ===
+function ChartSVG({ dataPoints, trend }) {
+  // SVG 尺寸
+  const W = 600;
+  const H = 280;
+  const padL = 50;
+  const padR = 20;
+  const padT = 30;
+  const padB = 60;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+
+  // 取得時間範圍
+  const times = dataPoints.map(p => p.time);
+  const minT = Math.min(...times);
+  const maxT = Math.max(...times);
+  const range = maxT - minT;
+  // 上下緩衝 10%
+  const padding = range * 0.15 || 1;
+  const yMin = minT - padding;
+  const yMax = maxT + padding;
+
+  // x: 平均分配，y: 反轉（小秒數=高位置）
+  const getX = (i) => padL + (chartW * i) / (dataPoints.length - 1);
+  const getY = (time) => padT + chartH * ((time - yMin) / (yMax - yMin));
+
+  // 折線 path
+  const linePath = dataPoints.map((p, i) =>
+    `${i === 0 ? "M" : "L"} ${getX(i)} ${getY(p.time)}`
+  ).join(" ");
+
+  // Y 軸刻度（4 條水平線）
+  const yTicks = [];
+  for (let i = 0; i <= 3; i++) {
+    const t = yMin + (yMax - yMin) * (i / 3);
+    yTicks.push({ time: t, y: padT + chartH * (i / 3) });
+  }
+
+  return (
+    <div className="rounded-lg p-3 border"
+         style={{ background: "var(--bg)", borderColor: "var(--line)" }}>
+      {/* 趨勢摘要 */}
+      {trend && (
+        <div className="mb-2 flex items-center justify-between flex-wrap gap-2">
+          <div className="text-xs" style={{ color: "var(--mute)" }}>
+            第一場 → 最後一場
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="num text-xs" style={{ color: "var(--ink-2)" }}>
+              {formatTime(dataPoints[0].time)} → {formatTime(dataPoints[dataPoints.length - 1].time)}
+            </span>
+            <span className="text-xs font-bold px-2 py-0.5 rounded"
+                  style={{
+                    background: trend.improved ? "var(--green-bg)" : "#FBE5DA",
+                    color: trend.improved ? "var(--green)" : "#B23A28",
+                  }}>
+              {trend.improved ? "▼" : "▲"} {Math.abs(trend.diff).toFixed(2)}s ({trend.pct}%)
+              {trend.improved ? " 進步" : " 退步"}
+            </span>
+          </div>
+        </div>
+      )}
+
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }}>
+        {/* Y 軸刻度線 + 標籤 */}
+        {yTicks.map((tk, i) => (
+          <g key={i}>
+            <line x1={padL} y1={tk.y} x2={W - padR} y2={tk.y}
+                  stroke="var(--line)" strokeWidth={1} strokeDasharray={i === 3 ? "" : "3,3"} />
+            <text x={padL - 8} y={tk.y + 4} textAnchor="end"
+                  fontSize={11} fill="var(--mute)" className="num">
+              {formatTime(tk.time)}
+            </text>
+          </g>
+        ))}
+
+        {/* Y 軸標示「快 ↑」「慢 ↓」 */}
+        <text x={padL - 35} y={padT + 6} fontSize={10} fill="var(--green)" fontWeight="bold">↑ 快</text>
+        <text x={padL - 35} y={padT + chartH - 2} fontSize={10} fill="#B23A28" fontWeight="bold">↓ 慢</text>
+
+        {/* 折線 */}
+        <path d={linePath} fill="none" stroke="var(--accent-2)" strokeWidth={2.5}
+              strokeLinecap="round" strokeLinejoin="round" />
+
+        {/* 資料點 */}
+        {dataPoints.map((p, i) => (
+          <g key={i}>
+            <circle cx={getX(i)} cy={getY(p.time)} r={p.isPB ? 7 : 5}
+                    fill={p.isPB ? "var(--green)" : "var(--accent-2)"}
+                    stroke="#fff" strokeWidth={2} />
+            {/* PB 星號 */}
+            {p.isPB && (
+              <text x={getX(i)} y={getY(p.time) - 12} textAnchor="middle"
+                    fontSize={14} fill="var(--green)" fontWeight="bold">★</text>
+            )}
+            {/* 時間標籤 */}
+            <text x={getX(i)} y={getY(p.time) + (p.isPB ? 22 : 20)}
+                  textAnchor="middle" fontSize={10} fill="var(--ink)" fontWeight="bold" className="num">
+              {formatTime(p.time)}
+            </text>
+          </g>
+        ))}
+
+        {/* X 軸：比賽名（傾斜） */}
+        {dataPoints.map((p, i) => {
+          const cx = getX(i);
+          const cy = H - padB + 10;
+          return (
+            <g key={i} transform={`rotate(-30 ${cx} ${cy})`}>
+              <text x={cx} y={cy} textAnchor="end" fontSize={10} fill="var(--ink-2)">
+                {p.meet}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* X 軸底線 */}
+        <line x1={padL} y1={padT + chartH} x2={W - padR} y2={padT + chartH}
+              stroke="var(--ink)" strokeWidth={1.5} />
+      </svg>
+
+      <div className="text-[10px] mt-1 text-center" style={{ color: "var(--mute)" }}>
+        ★ = 個人最佳 · 線往下表示時間減少（進步）
+      </div>
+    </div>
+  );
+}
+
 function EventView({ swimStats, selectedEvent, setSelectedEvent }) {
   return (
     <section className="rounded-2xl p-4 sm:p-5 border-2"
@@ -8213,8 +8453,836 @@ function MeetDetail({ meet, swimStats }) {
   );
 }
 
-// === 匯入工具（給主管理員） ===
-function SwimStatsImporter({ setSwimStats, logAction }) {
+// === 選手對比 (A vs B) ===
+function CompareView({ swimStats }) {
+  const [swimmerA, setSwimmerA] = useState(null);
+  const [swimmerB, setSwimmerB] = useState(null);
+  const names = Object.keys(swimStats.swimmers);
+
+  // 計算 PB
+  const calcPB = (name) => {
+    if (!name) return {};
+    const pb = {};
+    (swimStats.swimmers[name] || []).forEach(r => {
+      Object.entries(r.results || {}).forEach(([ev, t]) => {
+        if (!pb[ev] || t < pb[ev].time) pb[ev] = { time: t, meet: r.meet };
+      });
+    });
+    return pb;
+  };
+
+  const pbA = useMemo(() => calcPB(swimmerA), [swimmerA, swimStats]);
+  const pbB = useMemo(() => calcPB(swimmerB), [swimmerB, swimStats]);
+
+  // 找兩人都有紀錄的項目
+  const commonEvents = swimStats.events.filter(ev => pbA[ev] || pbB[ev]);
+
+  return (
+    <section className="rounded-2xl p-4 sm:p-5 border-2"
+             style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
+      <div className="text-[10px] tk-x mb-3" style={{ color: "var(--mute)" }}>
+        選手對比 · A vs B
+      </div>
+
+      {/* 兩個下拉 */}
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        <select value={swimmerA || ""} onChange={e => setSwimmerA(e.target.value || null)}
+                className="px-3 py-2 rounded-md border-2 text-sm font-medium"
+                style={{ borderColor: "var(--accent)", background: "var(--accent-bg)", color: "var(--accent-2)" }}>
+          <option value="">選手 A</option>
+          {names.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <select value={swimmerB || ""} onChange={e => setSwimmerB(e.target.value || null)}
+                className="px-3 py-2 rounded-md border-2 text-sm font-medium"
+                style={{ borderColor: "var(--purple, #7C4DBC)", background: "#EFE4F8", color: "#7C4DBC" }}>
+          <option value="">選手 B</option>
+          {names.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+      </div>
+
+      {(!swimmerA || !swimmerB) ? (
+        <div className="text-center py-8" style={{ color: "var(--mute)" }}>
+          <div className="text-4xl mb-2">⚖️</div>
+          <div className="text-sm">請選擇兩位選手進行對比</div>
+        </div>
+      ) : commonEvents.length === 0 ? (
+        <div className="text-center py-8" style={{ color: "var(--mute)" }}>
+          <div className="text-sm">兩位選手沒有共同項目</div>
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {/* 表頭 */}
+          <div className="grid items-center gap-2 px-2 py-2 rounded"
+               style={{
+                 gridTemplateColumns: "1fr 60px auto 60px 1fr",
+                 background: "var(--panel-2)",
+               }}>
+            <div className="text-xs font-bold text-right" style={{ color: "var(--accent-2)" }}>{swimmerA}</div>
+            <div className="text-[10px] tk-x text-center" style={{ color: "var(--mute)" }}>A 時間</div>
+            <div className="text-[10px] tk-x text-center" style={{ color: "var(--mute)" }}>項目</div>
+            <div className="text-[10px] tk-x text-center" style={{ color: "var(--mute)" }}>B 時間</div>
+            <div className="text-xs font-bold" style={{ color: "#7C4DBC" }}>{swimmerB}</div>
+          </div>
+          {commonEvents.map(ev => {
+            const tA = pbA[ev]?.time;
+            const tB = pbB[ev]?.time;
+            const hasA = tA !== undefined;
+            const hasB = tB !== undefined;
+            const aWins = hasA && hasB && tA < tB;
+            const bWins = hasA && hasB && tB < tA;
+            const diff = hasA && hasB ? Math.abs(tA - tB) : null;
+            return (
+              <div key={ev} className="grid items-center gap-2 px-2 py-2 rounded border"
+                   style={{
+                     gridTemplateColumns: "1fr 60px auto 60px 1fr",
+                     borderColor: "var(--line)",
+                     background: "var(--bg)",
+                   }}>
+                {/* A 的勝負標 */}
+                <div className="text-right">
+                  {aWins && <span className="text-[10px] px-1.5 py-0.5 rounded font-bold"
+                                  style={{ background: "var(--accent-bg)", color: "var(--accent-2)" }}>
+                    快 {diff.toFixed(2)}s
+                  </span>}
+                </div>
+                {/* A 的時間 */}
+                <div className="num text-sm font-bold text-center"
+                     style={{ color: aWins ? "var(--accent-2)" : (hasA ? "var(--ink)" : "var(--mute)") }}>
+                  {hasA ? formatTime(tA) : "—"}
+                </div>
+                {/* 項目名 */}
+                <div className="text-xs font-bold text-center px-2" style={{ color: "var(--ink)", minWidth: 50 }}>
+                  {ev}
+                </div>
+                {/* B 的時間 */}
+                <div className="num text-sm font-bold text-center"
+                     style={{ color: bWins ? "#7C4DBC" : (hasB ? "var(--ink)" : "var(--mute)") }}>
+                  {hasB ? formatTime(tB) : "—"}
+                </div>
+                {/* B 的勝負標 */}
+                <div>
+                  {bWins && <span className="text-[10px] px-1.5 py-0.5 rounded font-bold"
+                                  style={{ background: "#EFE4F8", color: "#7C4DBC" }}>
+                    快 {diff.toFixed(2)}s
+                  </span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// === 完整成績清單（含篩選） ===
+function RecordsView({ swimStats }) {
+  const [filterSwimmer, setFilterSwimmer] = useState("");
+  const [filterMeet, setFilterMeet] = useState("");
+  const [filterEvent, setFilterEvent] = useState("");
+
+  // 攤平所有紀錄
+  const allRecords = useMemo(() => {
+    const arr = [];
+    Object.entries(swimStats.swimmers || {}).forEach(([name, records]) => {
+      (records || []).forEach(r => {
+        Object.entries(r.results || {}).forEach(([ev, t]) => {
+          arr.push({ swimmer: name, meet: r.meet, event: ev, time: t });
+        });
+      });
+    });
+    return arr;
+  }, [swimStats]);
+
+  // 篩選
+  const filtered = allRecords.filter(r =>
+    (!filterSwimmer || r.swimmer === filterSwimmer) &&
+    (!filterMeet || r.meet === filterMeet) &&
+    (!filterEvent || r.event === filterEvent)
+  );
+
+  // 計算每人每項目的 PB（用於標 ★）
+  const pbSet = useMemo(() => {
+    const map = {};
+    allRecords.forEach(r => {
+      const k = `${r.swimmer}|${r.event}`;
+      if (!map[k] || r.time < map[k].time) map[k] = { time: r.time, meet: r.meet };
+    });
+    const set = new Set();
+    Object.entries(map).forEach(([k, v]) => {
+      set.add(`${k}|${v.meet}|${v.time}`);
+    });
+    return set;
+  }, [allRecords]);
+
+  const clearFilters = () => {
+    setFilterSwimmer(""); setFilterMeet(""); setFilterEvent("");
+  };
+
+  const hasFilter = filterSwimmer || filterMeet || filterEvent;
+
+  return (
+    <section className="rounded-2xl p-4 sm:p-5 border-2"
+             style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="text-[10px] tk-x" style={{ color: "var(--mute)" }}>
+          完整成績清單 · 共 {allRecords.length} 筆{hasFilter && ` · 篩選後 ${filtered.length} 筆`}
+        </div>
+        {hasFilter && (
+          <button onClick={clearFilters}
+                  className="btn-tactile text-[11px] px-2 py-1 rounded border"
+                  style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+            清除篩選
+          </button>
+        )}
+      </div>
+
+      {/* 篩選器 */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
+        <select value={filterSwimmer} onChange={e => setFilterSwimmer(e.target.value)}
+                className="px-3 py-2 rounded-md border text-xs"
+                style={{ borderColor: "var(--line-strong)", background: "var(--bg)" }}>
+          <option value="">所有選手</option>
+          {Object.keys(swimStats.swimmers || {}).map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <select value={filterMeet} onChange={e => setFilterMeet(e.target.value)}
+                className="px-3 py-2 rounded-md border text-xs"
+                style={{ borderColor: "var(--line-strong)", background: "var(--bg)" }}>
+          <option value="">所有比賽</option>
+          {(swimStats.meets || []).map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+        <select value={filterEvent} onChange={e => setFilterEvent(e.target.value)}
+                className="px-3 py-2 rounded-md border text-xs"
+                style={{ borderColor: "var(--line-strong)", background: "var(--bg)" }}>
+          <option value="">所有項目</option>
+          {(swimStats.events || []).map(e => <option key={e} value={e}>{e}</option>)}
+        </select>
+      </div>
+
+      {/* 表格 */}
+      {filtered.length === 0 ? (
+        <div className="text-center py-8" style={{ color: "var(--mute)" }}>
+          <div className="text-sm">沒有符合條件的紀錄</div>
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "var(--line)" }}>
+          <div className="grid items-center text-xs font-bold px-2 py-2"
+               style={{
+                 gridTemplateColumns: "1fr 1.5fr 60px 70px",
+                 background: "var(--ink)", color: "var(--bg)",
+               }}>
+            <div>選手</div>
+            <div>比賽</div>
+            <div className="text-center">項目</div>
+            <div className="text-right">時間</div>
+          </div>
+          <div className="max-h-96 overflow-y-auto">
+            {filtered.map((r, i) => {
+              const isPB = pbSet.has(`${r.swimmer}|${r.event}|${r.meet}|${r.time}`);
+              return (
+                <div key={i} className="grid items-center px-2 py-1.5 text-xs"
+                     style={{
+                       gridTemplateColumns: "1fr 1.5fr 60px 70px",
+                       borderBottom: "1px solid var(--line)",
+                       background: i % 2 === 0 ? "var(--bg)" : "var(--panel-2)",
+                     }}>
+                  <div className="font-medium truncate" style={{ color: "var(--ink)" }}>{r.swimmer}</div>
+                  <div className="truncate" style={{ color: "var(--ink-2)" }}>{r.meet}</div>
+                  <div className="text-center" style={{ color: "var(--ink-2)" }}>{r.event}</div>
+                  <div className="num text-right font-bold" style={{ color: isPB ? "var(--green)" : "var(--ink)" }}>
+                    {formatTime(r.time)}{isPB && " ★"}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      <div className="text-[10px] mt-2" style={{ color: "var(--mute)" }}>
+        ★ 表示該選手該項目的個人最佳
+      </div>
+    </section>
+  );
+}
+
+
+// === 整場比賽錄入（管理員） ===
+function InputView({ swimStats, setSwimStats, logAction, user }) {
+  const [mode, setMode] = useState("meet");  // meet / single / manage
+  return (
+    <div className="space-y-3">
+      {/* 模式切換 */}
+      <div className="flex gap-1 p-1 rounded-xl border-2 flex-wrap"
+           style={{ borderColor: "var(--accent-2)", background: "var(--accent-bg)" }}>
+        {[
+          { k: "meet", l: "整場比賽錄入", icon: "🏆" },
+          { k: "single", l: "快速單筆", icon: "⚡" },
+          { k: "manage", l: "選手 / 比賽管理", icon: "📋" },
+        ].map(t => {
+          const active = mode === t.k;
+          return (
+            <button key={t.k} onClick={() => setMode(t.k)}
+                    className="btn-tactile flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap"
+                    style={{
+                      background: active ? "var(--accent-2)" : "transparent",
+                      color: active ? "#fff" : "var(--accent-2)",
+                      minWidth: 100,
+                    }}>
+              <span>{t.icon}</span>
+              {t.l}
+            </button>
+          );
+        })}
+      </div>
+
+      {mode === "meet" && <MeetInput swimStats={swimStats} setSwimStats={setSwimStats} logAction={logAction} />}
+      {mode === "single" && <SingleInput swimStats={swimStats} setSwimStats={setSwimStats} logAction={logAction} />}
+      {mode === "manage" && <SwimStatsManage swimStats={swimStats} setSwimStats={setSwimStats} logAction={logAction} />}
+    </div>
+  );
+}
+
+// === 整場比賽錄入 ===
+function MeetInput({ swimStats, setSwimStats, logAction }) {
+  const [selectedMeet, setSelectedMeet] = useState("");
+  const [showNewMeet, setShowNewMeet] = useState(false);
+  const [newMeetName, setNewMeetName] = useState("");
+  const [selectedSwimmers, setSelectedSwimmers] = useState(new Set());
+  const [draft, setDraft] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [saveResult, setSaveResult] = useState("");
+
+  const allNames = Object.keys(swimStats.swimmers || {});
+
+  const applyLastSwimmers = () => {
+    if (swimStats.meets.length === 0) return;
+    const lastMeet = swimStats.meets[swimStats.meets.length - 1];
+    const last = new Set();
+    Object.entries(swimStats.swimmers || {}).forEach(([name, records]) => {
+      if (records.some(r => r.meet === lastMeet)) last.add(name);
+    });
+    setSelectedSwimmers(last);
+  };
+
+  const getExisting = (name, ev) => {
+    const records = swimStats.swimmers[name] || [];
+    const r = records.find(x => x.meet === selectedMeet);
+    return r?.results?.[ev];
+  };
+
+  const addNewMeet = () => {
+    const trimmed = newMeetName.trim();
+    if (!trimmed) return;
+    if (swimStats.meets.includes(trimmed)) {
+      alert("這場比賽已存在");
+      return;
+    }
+    setSwimStats({
+      ...swimStats,
+      meets: [...swimStats.meets, trimmed],
+    });
+    setSelectedMeet(trimmed);
+    setNewMeetName("");
+    setShowNewMeet(false);
+    if (logAction) logAction("add_meet", { target: trimmed, targetLabel: `新增比賽：${trimmed}` });
+  };
+
+  const toggleSwimmer = (name) => {
+    const next = new Set(selectedSwimmers);
+    if (next.has(name)) next.delete(name);
+    else next.add(name);
+    setSelectedSwimmers(next);
+  };
+
+  const setCellDraft = (name, ev, val) => {
+    setDraft(d => ({ ...d, [name]: { ...(d[name] || {}), [ev]: val } }));
+  };
+
+  const changeCount = useMemo(() => {
+    let n = 0;
+    Object.entries(draft).forEach(([name, evs]) => {
+      Object.entries(evs).forEach(([ev, v]) => {
+        const trimmed = (v || "").trim();
+        const existing = getExisting(name, ev);
+        const newTime = trimmed ? parseTime(trimmed) : null;
+        if (newTime !== null) {
+          if (existing === undefined || Math.abs(existing - newTime) > 0.001) n++;
+        }
+      });
+    });
+    return n;
+  }, [draft, swimStats, selectedMeet]);
+
+  const saveAll = async () => {
+    if (!selectedMeet) {
+      setSaveResult("✗ 請先選比賽");
+      return;
+    }
+    setSaving(true);
+    setSaveResult("");
+    try {
+      const newSwimmers = { ...(swimStats.swimmers || {}) };
+      let updateCount = 0;
+      Object.entries(draft).forEach(([name, evs]) => {
+        const records = [...(newSwimmers[name] || [])];
+        let meetRecIdx = records.findIndex(r => r.meet === selectedMeet);
+        let meetRec;
+        if (meetRecIdx < 0) {
+          meetRec = { meet: selectedMeet, results: {} };
+          records.push(meetRec);
+          meetRecIdx = records.length - 1;
+        } else {
+          meetRec = { meet: selectedMeet, results: { ...records[meetRecIdx].results } };
+          records[meetRecIdx] = meetRec;
+        }
+        Object.entries(evs).forEach(([ev, v]) => {
+          const trimmed = (v || "").trim();
+          if (trimmed === "") return;
+          const t = parseTime(trimmed);
+          if (t === null) return;
+          if (meetRec.results[ev] !== t) {
+            meetRec.results[ev] = t;
+            updateCount++;
+          }
+        });
+        if (Object.keys(meetRec.results).length === 0) {
+          records.splice(meetRecIdx, 1);
+        }
+        newSwimmers[name] = records;
+      });
+      await setSwimStats({ ...swimStats, swimmers: newSwimmers });
+      setSaveResult(`✓ 已儲存 ${updateCount} 筆成績`);
+      setDraft({});
+      if (logAction) logAction("save_meet_input", {
+        target: selectedMeet,
+        targetLabel: `錄入「${selectedMeet}」共 ${updateCount} 筆`,
+      });
+    } catch (e) {
+      setSaveResult(`✗ ${e.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <section className="rounded-xl p-3 border-2"
+               style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
+        <div className="flex items-center gap-2 mb-2">
+          <span className="num text-[10px] font-bold px-2 py-0.5 rounded"
+                style={{ background: "var(--accent-2)", color: "#fff" }}>1</span>
+          <span className="text-sm font-bold" style={{ color: "var(--ink)" }}>選擇比賽</span>
+        </div>
+        {!showNewMeet ? (
+          <div className="flex gap-2 flex-wrap">
+            <select value={selectedMeet} onChange={e => setSelectedMeet(e.target.value)}
+                    className="flex-1 min-w-[180px] px-3 py-2 rounded-md border-2 text-sm"
+                    style={{ borderColor: "var(--line-strong)", background: "var(--bg)" }}>
+              <option value="">-- 選一場比賽 --</option>
+              {swimStats.meets.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+            <button onClick={() => setShowNewMeet(true)}
+                    className="btn-tactile px-3 py-2 rounded-md text-xs font-medium border-2"
+                    style={{ borderColor: "var(--green)", color: "var(--green)" }}>
+              + 新增比賽
+            </button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <input type="text" value={newMeetName} onChange={e => setNewMeetName(e.target.value)}
+                   onKeyDown={e => e.key === "Enter" && addNewMeet()}
+                   placeholder="例：115 年市中運"
+                   className="flex-1 px-3 py-2 rounded-md border-2 text-sm"
+                   style={{ borderColor: "var(--green)", background: "var(--bg)" }} />
+            <button onClick={addNewMeet} disabled={!newMeetName.trim()}
+                    className="btn-tactile px-3 py-2 rounded-md text-xs font-medium"
+                    style={{ background: "var(--green)", color: "#fff" }}>
+              建立
+            </button>
+            <button onClick={() => { setShowNewMeet(false); setNewMeetName(""); }}
+                    className="btn-tactile px-3 py-2 rounded-md text-xs"
+                    style={{ color: "var(--mute)" }}>
+              取消
+            </button>
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-xl p-3 border-2"
+               style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
+        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <span className="num text-[10px] font-bold px-2 py-0.5 rounded"
+                  style={{ background: "var(--accent-2)", color: "#fff" }}>2</span>
+            <span className="text-sm font-bold" style={{ color: "var(--ink)" }}>
+              勾選參賽選手 <span className="num" style={{ color: "var(--accent-2)" }}>{selectedSwimmers.size}</span> / {allNames.length}
+            </span>
+          </div>
+          <div className="flex gap-1">
+            <button onClick={() => setSelectedSwimmers(new Set(allNames))}
+                    className="btn-tactile text-[11px] px-2 py-1 rounded border"
+                    style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>全選</button>
+            <button onClick={() => setSelectedSwimmers(new Set())}
+                    className="btn-tactile text-[11px] px-2 py-1 rounded border"
+                    style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>清除</button>
+            <button onClick={applyLastSwimmers}
+                    className="btn-tactile text-[11px] px-2 py-1 rounded border"
+                    style={{ borderColor: "var(--accent)", color: "var(--accent-2)" }}>套用上一場</button>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {allNames.map(n => {
+            const sel = selectedSwimmers.has(n);
+            return (
+              <button key={n} onClick={() => toggleSwimmer(n)}
+                      className="btn-tactile px-2 py-1 rounded text-[11px] sm:text-xs font-medium border"
+                      style={{
+                        background: sel ? "var(--accent-2)" : "transparent",
+                        color: sel ? "#fff" : "var(--ink-2)",
+                        borderColor: sel ? "var(--accent-2)" : "var(--line-strong)",
+                      }}>
+                {sel && "✓ "}{n}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="rounded-xl p-3 border-2"
+               style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
+        <div className="flex items-center gap-2 mb-3">
+          <span className="num text-[10px] font-bold px-2 py-0.5 rounded"
+                style={{ background: "var(--accent-2)", color: "#fff" }}>3</span>
+          <span className="text-sm font-bold" style={{ color: "var(--ink)" }}>
+            填入成績 <span className="text-[10px] font-normal" style={{ color: "var(--mute)" }}>
+              （藍底為既有,留空表示未參賽）
+            </span>
+          </span>
+        </div>
+        {!selectedMeet || selectedSwimmers.size === 0 ? (
+          <div className="text-center py-6 text-sm" style={{ color: "var(--mute)" }}>
+            請先選擇比賽與參賽選手
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={{
+                    position: "sticky", left: 0, zIndex: 2,
+                    background: "var(--ink)", color: "var(--bg)",
+                    padding: "6px 8px", textAlign: "left", minWidth: 80,
+                    borderBottom: "2px solid var(--ink)",
+                  }}>選手</th>
+                  {swimStats.events.map(ev => (
+                    <th key={ev} style={{
+                      background: "var(--ink)", color: "var(--bg)",
+                      padding: "6px 4px", minWidth: 60, fontSize: 10,
+                      borderBottom: "2px solid var(--ink)",
+                    }}>{ev}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[...selectedSwimmers].map(name => (
+                  <tr key={name}>
+                    <td style={{
+                      position: "sticky", left: 0, zIndex: 1,
+                      background: "var(--panel-2)", padding: "4px 8px",
+                      fontWeight: 600, color: "var(--ink)",
+                      borderBottom: "1px solid var(--line)",
+                    }}>{name}</td>
+                    {swimStats.events.map(ev => {
+                      const existing = getExisting(name, ev);
+                      const draftVal = draft[name]?.[ev];
+                      const hasExisting = existing !== undefined;
+                      const displayVal = draftVal !== undefined ? draftVal :
+                        (hasExisting ? formatTime(existing) : "");
+                      return (
+                        <td key={ev} style={{
+                          padding: 1, borderBottom: "1px solid var(--line)",
+                          background: hasExisting && draftVal === undefined ? "#E8F1F8" : "transparent",
+                        }}>
+                          <input type="text" value={displayVal}
+                                 onChange={e => setCellDraft(name, ev, e.target.value)}
+                                 className="num w-full px-1 py-1 rounded text-xs"
+                                 style={{
+                                   background: "transparent", border: "1px solid transparent",
+                                   minWidth: 50,
+                                 }} />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <div className="sticky bottom-2 z-10 rounded-xl border-2 p-3 flex items-center justify-between flex-wrap gap-2 shadow-lg"
+           style={{ background: "var(--ink)", borderColor: "var(--ink)" }}>
+        <div className="text-xs" style={{ color: "rgba(242,237,226,0.8)" }}>
+          {changeCount > 0 ? (
+            <>準備儲存 <span className="num font-bold" style={{ color: "var(--green-2)" }}>{changeCount}</span> 筆變更</>
+          ) : "尚無變更"}
+          {saveResult && (
+            <span className="ml-2 font-medium"
+                  style={{ color: saveResult.startsWith("✓") ? "var(--green-2)" : "#FAA8A8" }}>
+              · {saveResult}
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => { setDraft({}); setSaveResult(""); }}
+                  className="btn-tactile px-3 py-1.5 rounded text-xs border"
+                  style={{ borderColor: "rgba(242,237,226,0.3)", color: "rgba(242,237,226,0.8)" }}>
+            清空草稿
+          </button>
+          <button onClick={saveAll} disabled={changeCount === 0 || saving}
+                  className="btn-tactile px-4 py-1.5 rounded font-bold text-xs"
+                  style={{
+                    background: changeCount > 0 && !saving ? "var(--green)" : "rgba(255,255,255,0.15)",
+                    color: changeCount > 0 && !saving ? "#fff" : "rgba(242,237,226,0.4)",
+                  }}>
+            {saving ? "儲存中..." : "💾 儲存全部"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// === 快速單筆輸入 ===
+function SingleInput({ swimStats, setSwimStats, logAction }) {
+  const [name, setName] = useState("");
+  const [meet, setMeet] = useState("");
+  const [event, setEvent] = useState("");
+  const [timeStr, setTimeStr] = useState("");
+  const [result, setResult] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!name || !meet || !event || !timeStr.trim()) {
+      setResult("✗ 請填完整");
+      return;
+    }
+    const t = parseTime(timeStr.trim());
+    if (t === null) {
+      setResult("✗ 時間格式錯誤");
+      return;
+    }
+    setSaving(true);
+    try {
+      const newSwimmers = { ...(swimStats.swimmers || {}) };
+      const records = [...(newSwimmers[name] || [])];
+      const idx = records.findIndex(r => r.meet === meet);
+      if (idx >= 0) {
+        records[idx] = {
+          meet,
+          results: { ...records[idx].results, [event]: t },
+        };
+      } else {
+        records.push({ meet, results: { [event]: t } });
+      }
+      newSwimmers[name] = records;
+      await setSwimStats({ ...swimStats, swimmers: newSwimmers });
+      setResult(`✓ ${name} / ${meet} / ${event} = ${formatTime(t)}`);
+      setTimeStr("");
+      if (logAction) logAction("save_single_input", {
+        target: `${name}-${meet}-${event}`,
+        targetLabel: `${name} ${meet} ${event}：${formatTime(t)}`,
+      });
+    } catch (e) {
+      setResult(`✗ ${e.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="rounded-xl p-4 border-2"
+             style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
+      <div className="text-sm font-bold mb-3" style={{ color: "var(--ink)" }}>⚡ 快速新增 / 修改單筆</div>
+      <div className="space-y-2">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <select value={name} onChange={e => setName(e.target.value)}
+                  className="px-3 py-2 rounded-md border text-sm"
+                  style={{ borderColor: "var(--line-strong)", background: "var(--bg)" }}>
+            <option value="">選手</option>
+            {Object.keys(swimStats.swimmers || {}).map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <select value={meet} onChange={e => setMeet(e.target.value)}
+                  className="px-3 py-2 rounded-md border text-sm"
+                  style={{ borderColor: "var(--line-strong)", background: "var(--bg)" }}>
+            <option value="">比賽</option>
+            {(swimStats.meets || []).map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+          <select value={event} onChange={e => setEvent(e.target.value)}
+                  className="px-3 py-2 rounded-md border text-sm"
+                  style={{ borderColor: "var(--line-strong)", background: "var(--bg)" }}>
+            <option value="">項目</option>
+            {(swimStats.events || []).map(ev => <option key={ev} value={ev}>{ev}</option>)}
+          </select>
+        </div>
+        <div className="flex gap-2">
+          <input type="text" value={timeStr} onChange={e => setTimeStr(e.target.value)}
+                 onKeyDown={e => e.key === "Enter" && save()}
+                 placeholder="時間 (1:23.45 或 83.45)"
+                 className="num flex-1 px-3 py-2 rounded-md border text-sm"
+                 style={{ borderColor: "var(--line-strong)", background: "var(--bg)" }} />
+          <button onClick={save} disabled={saving}
+                  className="btn-tactile px-4 py-2 rounded-md font-bold text-sm"
+                  style={{ background: "var(--accent-2)", color: "#fff" }}>
+            {saving ? "..." : "儲存"}
+          </button>
+        </div>
+        {result && (
+          <div className="text-xs mt-1"
+               style={{ color: result.startsWith("✓") ? "var(--green)" : "var(--red)" }}>
+            {result}
+          </div>
+        )}
+        <div className="text-[10px]" style={{ color: "var(--mute)" }}>
+          時間格式：1:23.45 / 1:23:45 / 83.45。同選手同比賽同項目會自動覆蓋。
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// === 選手 / 比賽管理 ===
+function SwimStatsManage({ swimStats, setSwimStats, logAction }) {
+  const [newSwimmer, setNewSwimmer] = useState("");
+  const [newMeet, setNewMeet] = useState("");
+
+  const addSwimmer = async () => {
+    const n = newSwimmer.trim();
+    if (!n) return;
+    if (swimStats.swimmers[n]) { alert("選手已存在"); return; }
+    await setSwimStats({
+      ...swimStats,
+      swimmers: { ...swimStats.swimmers, [n]: [] },
+    });
+    setNewSwimmer("");
+    if (logAction) logAction("add_swimmer", { target: n, targetLabel: `新增選手：${n}` });
+  };
+
+  const removeSwimmer = async (n) => {
+    if (!confirm(`刪除選手「${n}」？所有相關成績會一併移除。`)) return;
+    const next = { ...swimStats.swimmers };
+    delete next[n];
+    await setSwimStats({ ...swimStats, swimmers: next });
+    if (logAction) logAction("remove_swimmer", { target: n, targetLabel: `刪除選手：${n}` });
+  };
+
+  const addMeet = async () => {
+    const m = newMeet.trim();
+    if (!m) return;
+    if (swimStats.meets.includes(m)) { alert("比賽已存在"); return; }
+    await setSwimStats({ ...swimStats, meets: [...swimStats.meets, m] });
+    setNewMeet("");
+    if (logAction) logAction("add_meet", { target: m, targetLabel: `新增比賽：${m}` });
+  };
+
+  const removeMeet = async (m) => {
+    if (!confirm(`刪除比賽「${m}」？所有相關成績會一併移除。`)) return;
+    const newSwimmers = { ...swimStats.swimmers };
+    Object.keys(newSwimmers).forEach(n => {
+      newSwimmers[n] = newSwimmers[n].filter(r => r.meet !== m);
+    });
+    await setSwimStats({
+      ...swimStats,
+      meets: swimStats.meets.filter(x => x !== m),
+      swimmers: newSwimmers,
+    });
+    if (logAction) logAction("remove_meet", { target: m, targetLabel: `刪除比賽：${m}` });
+  };
+
+  const moveMeet = async (m, dir) => {
+    const idx = swimStats.meets.indexOf(m);
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= swimStats.meets.length) return;
+    const newMeets = [...swimStats.meets];
+    [newMeets[idx], newMeets[newIdx]] = [newMeets[newIdx], newMeets[idx]];
+    await setSwimStats({ ...swimStats, meets: newMeets });
+  };
+
+  return (
+    <div className="space-y-3">
+      <section className="rounded-xl p-3 border-2"
+               style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
+        <div className="text-sm font-bold mb-2" style={{ color: "var(--ink)" }}>
+          選手管理 <span className="num text-xs font-normal" style={{ color: "var(--mute)" }}>
+            ({Object.keys(swimStats.swimmers || {}).length})
+          </span>
+        </div>
+        <div className="flex gap-2 mb-3">
+          <input type="text" value={newSwimmer} onChange={e => setNewSwimmer(e.target.value)}
+                 onKeyDown={e => e.key === "Enter" && addSwimmer()}
+                 placeholder="新選手名字"
+                 className="flex-1 px-3 py-1.5 rounded-md border text-sm"
+                 style={{ borderColor: "var(--line-strong)", background: "var(--bg)" }} />
+          <button onClick={addSwimmer} disabled={!newSwimmer.trim()}
+                  className="btn-tactile px-3 py-1.5 rounded-md text-xs font-medium"
+                  style={{ background: "var(--green)", color: "#fff" }}>+ 新增</button>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {Object.keys(swimStats.swimmers || {}).map(n => (
+            <div key={n} className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs border"
+                 style={{ borderColor: "var(--line-strong)", background: "var(--bg)" }}>
+              <span>{n}</span>
+              <button onClick={() => removeSwimmer(n)}
+                      className="text-[10px] hover:text-red-600"
+                      style={{ color: "var(--mute)" }}>✕</button>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-xl p-3 border-2"
+               style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
+        <div className="text-sm font-bold mb-2" style={{ color: "var(--ink)" }}>
+          比賽管理 <span className="num text-xs font-normal" style={{ color: "var(--mute)" }}>
+            ({(swimStats.meets || []).length})
+          </span>
+        </div>
+        <div className="flex gap-2 mb-3">
+          <input type="text" value={newMeet} onChange={e => setNewMeet(e.target.value)}
+                 onKeyDown={e => e.key === "Enter" && addMeet()}
+                 placeholder="新比賽名稱"
+                 className="flex-1 px-3 py-1.5 rounded-md border text-sm"
+                 style={{ borderColor: "var(--line-strong)", background: "var(--bg)" }} />
+          <button onClick={addMeet} disabled={!newMeet.trim()}
+                  className="btn-tactile px-3 py-1.5 rounded-md text-xs font-medium"
+                  style={{ background: "var(--green)", color: "#fff" }}>+ 新增</button>
+        </div>
+        <div className="space-y-1">
+          {(swimStats.meets || []).map((m, i) => (
+            <div key={m} className="flex items-center gap-2 px-2 py-1.5 rounded border"
+                 style={{ borderColor: "var(--line)", background: "var(--bg)" }}>
+              <span className="num text-[10px]" style={{ color: "var(--mute)", minWidth: 20 }}>{i + 1}</span>
+              <span className="flex-1 text-sm" style={{ color: "var(--ink)" }}>{m}</span>
+              <button onClick={() => moveMeet(m, -1)} disabled={i === 0}
+                      className="text-xs px-1.5 py-0.5 rounded border"
+                      style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>▲</button>
+              <button onClick={() => moveMeet(m, 1)} disabled={i === swimStats.meets.length - 1}
+                      className="text-xs px-1.5 py-0.5 rounded border"
+                      style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>▼</button>
+              <button onClick={() => removeMeet(m)}
+                      className="text-xs px-1.5 py-0.5 rounded border"
+                      style={{ borderColor: "var(--red)", color: "var(--red)" }}>✕</button>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+
+function SwimStatsImporter({ swimStats, setSwimStats, logAction }) {
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState("");
 
@@ -8245,14 +9313,50 @@ function SwimStatsImporter({ setSwimStats, logAction }) {
     }
   };
 
+  const handleExport = () => {
+    try {
+      const exportData = {
+        events: swimStats.events || [],
+        meets: swimStats.meets || [],
+        swimmers: swimStats.swimmers || {},
+        _version: swimStats._version || new Date().toISOString(),
+      };
+      const json = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const ts = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+      a.href = url;
+      a.download = `swim_stats_${ts}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setResult("✓ 已下載 JSON 備份");
+      if (logAction) logAction("export_swim_stats", {
+        target: "swim_stats",
+        targetLabel: `匯出比賽成績備份`,
+      });
+    } catch (e) {
+      setResult(`✗ ${e.message}`);
+    }
+  };
+
   return (
     <div>
-      <label className="btn-tactile inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium cursor-pointer"
-             style={{ background: "var(--accent-2)", color: "#fff" }}>
-        📥 匯入 swim-stats JSON
-        <input type="file" accept=".json" className="hidden"
-               onChange={e => e.target.files[0] && handleImport(e.target.files[0])} />
-      </label>
+      <div className="flex gap-2 flex-wrap">
+        <label className="btn-tactile inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium cursor-pointer"
+               style={{ background: "var(--accent-2)", color: "#fff" }}>
+          📥 匯入 JSON
+          <input type="file" accept=".json" className="hidden"
+                 onChange={e => e.target.files[0] && handleImport(e.target.files[0])} />
+        </label>
+        <button onClick={handleExport}
+                className="btn-tactile inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium border-2"
+                style={{ borderColor: "var(--accent-2)", color: "var(--accent-2)" }}>
+          📤 匯出 JSON 備份
+        </button>
+      </div>
       {importing && (
         <div className="text-xs mt-2" style={{ color: "var(--mute)" }}>處理中...</div>
       )}
