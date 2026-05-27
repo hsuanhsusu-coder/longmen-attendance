@@ -8,7 +8,7 @@ import {
   Award, ChevronLeft, ChevronRight, ListChecks, CalendarDays,
   BarChart3, ClipboardCheck, Sun, Moon, Trophy, AlertCircle, Camera, Eye,
   LogOut, Cloud, CloudOff, RefreshCw, User, Settings, Plus, Trash2, Edit3, Save,
-  Crown, Shield, Lock, History, Undo2, Filter, FileText
+  Crown, Shield, Lock, History, Undo2, Filter, FileText, Share2, Clock
 } from "lucide-react";
 
 // ============ DATA ============
@@ -4432,6 +4432,9 @@ function StatCard({ tag, label, value, sub, color, bg, alert, ring }) {
 // ============ SCREENSHOT VIEW ============
 function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay }) {
   const { roster } = useRoster();
+  const cardRef = useRef(null);  // ref 標記要截圖的卡片
+  const [sharing, setSharing] = useState(false);
+  const [shareHint, setShareHint] = useState("");
   const dateInfo = getDateInfo(selectedDate);
   const amAtt = attendance[selectedDate]?.am || {};
   const pmAtt = attendance[selectedDate]?.pm || {};
@@ -4607,7 +4610,7 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
       {/* Floating controls (won't be in screenshot if cropped) */}
       <div className="sticky top-2 z-50 flex justify-end px-3 py-2"
            style={{ pointerEvents: "none" }}>
-        <div className="flex gap-2" style={{ pointerEvents: "auto" }}>
+        <div className="flex gap-2 flex-wrap" style={{ pointerEvents: "auto" }}>
           <button onClick={onPrevDay}
                   className="btn-tactile w-8 h-8 rounded-full border-2 flex items-center justify-center shadow-md"
                   style={{ background: "#fff", borderColor: "#1A3D4D", color: "#1A3D4D" }}>
@@ -4618,6 +4621,96 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
                   style={{ background: "#fff", borderColor: "#1A3D4D", color: "#1A3D4D" }}>
             <ChevronRight size={14} strokeWidth={2.5} />
           </button>
+          <button onClick={async () => {
+            if (sharing) return;
+            setSharing(true);
+            setShareHint("");
+            try {
+              // 動態載入 html2canvas (CDN)
+              if (typeof window.html2canvas === "undefined") {
+                await new Promise((resolve, reject) => {
+                  const s = document.createElement("script");
+                  s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+                  s.onload = resolve;
+                  s.onerror = reject;
+                  document.head.appendChild(s);
+                });
+              }
+              // 截圖卡片
+              if (!cardRef.current) {
+                throw new Error("找不到截圖元件");
+              }
+              const canvas = await window.html2canvas(cardRef.current, {
+                backgroundColor: "#FFFCF6",
+                scale: 2,  // 高解析度
+                useCORS: true,
+                logging: false,
+              });
+              // 轉成 Blob
+              const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+              if (!blob) throw new Error("產生圖片失敗");
+
+              const [yyyy, mm, dd] = selectedDate.split("-");
+              const filename = `龍門泳隊_${yyyy}${mm}${dd}.png`;
+              const file = new File([blob], filename, { type: "image/png" });
+
+              // 嘗試 Web Share API（手機可選 LINE）
+              if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                try {
+                  await navigator.share({
+                    files: [file],
+                    title: `龍門泳隊 ${yyyy}/${mm}/${dd}`,
+                  });
+                  setShareHint("✓ 分享完成");
+                  setTimeout(() => setShareHint(""), 2000);
+                  return;
+                } catch (e) {
+                  // 使用者取消 → 不顯示錯誤
+                  if (e.name === "AbortError") {
+                    setShareHint("");
+                    return;
+                  }
+                  // 其他錯誤 → 改下載
+                  console.warn("Web Share 失敗,改下載", e);
+                }
+              }
+              // 備援：下載圖片
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = filename;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              setTimeout(() => URL.revokeObjectURL(url), 1000);
+              setShareHint("✓ 圖片已下載");
+              setTimeout(() => setShareHint(""), 3000);
+            } catch (e) {
+              console.error("分享失敗", e);
+              setShareHint("⚠ 失敗,請重試");
+              setTimeout(() => setShareHint(""), 3000);
+            } finally {
+              setSharing(false);
+            }
+          }}
+                  disabled={sharing}
+                  className="btn-tactile flex items-center gap-1 px-3 h-8 rounded-full border-2 text-xs font-medium shadow-md"
+                  style={{
+                    background: "#1F5C3A", borderColor: "#1F5C3A", color: "#fff",
+                    opacity: sharing ? 0.6 : 1,
+                  }}>
+            {sharing ? (
+              <>
+                <span className="animate-pulse">…</span>
+                <span>處理中</span>
+              </>
+            ) : (
+              <>
+                <Share2 size={12} strokeWidth={2.5} />
+                <span>分享圖片</span>
+              </>
+            )}
+          </button>
           <button onClick={onExit}
                   className="btn-tactile flex items-center gap-1 px-3 h-8 rounded-full border-2 text-xs font-medium shadow-md"
                   style={{ background: "#1A3D4D", borderColor: "#1A3D4D", color: "#F2EDE2" }}>
@@ -4627,9 +4720,20 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
         </div>
       </div>
 
+      {shareHint && (
+        <div className="fixed top-14 left-1/2 z-50 px-4 py-2 rounded-full text-sm font-medium shadow-lg"
+             style={{
+               transform: "translateX(-50%)",
+               background: shareHint.startsWith("✓") ? "#1F5C3A" : "#B23A28",
+               color: "#fff",
+             }}>
+          {shareHint}
+        </div>
+      )}
+
       {/* Compact card */}
       <div className="px-2 pb-4" style={{ marginTop: -32 }}>
-        <div className="mx-auto rounded-xl border-2 overflow-hidden"
+        <div ref={cardRef} className="mx-auto rounded-xl border-2 overflow-hidden"
              style={{
                background: "#FFFCF6", borderColor: "#1A3D4D",
                maxWidth: 400,
