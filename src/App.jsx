@@ -59,6 +59,21 @@ const useRoster = () => useContext(RosterContext);
 // 找特定 seq 的 person（用於 audit log 紀錄人名）
 const ROSTER_lookup = (roster, seq) => roster.find(p => p.seq === seq);
 
+// 把成績選手名字依照點名 roster 的順序排序
+// roster 內的名字 → 照 seq 排；roster 沒有的名字 → 排在後面（保持原順序）
+const sortSwimmerNames = (names, roster) => {
+  const orderMap = {};
+  (roster || []).forEach((p, idx) => { orderMap[p.name] = idx; });
+  return [...names].sort((a, b) => {
+    const ia = orderMap[a];
+    const ib = orderMap[b];
+    if (ia !== undefined && ib !== undefined) return ia - ib;  // 都在 roster → 照順序
+    if (ia !== undefined) return -1;  // a 在 roster，排前面
+    if (ib !== undefined) return 1;   // b 在 roster，排前面
+    return 0;  // 都不在 roster → 保持原順序
+  });
+};
+
 // ============ DATE HELPERS ============
 const pad = (n) => String(n).padStart(2, "0");
 const toDateStr = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -7952,7 +7967,8 @@ function SwimStatsView({ swimStats, setSwimStats, swimStatsLoaded, isAdmin, isOw
 
 // === 選手檢視 ===
 function SwimmerView({ swimStats, selectedSwimmer, setSelectedSwimmer }) {
-  const names = Object.keys(swimStats.swimmers);
+  const { roster } = useRoster();
+  const names = sortSwimmerNames(Object.keys(swimStats.swimmers), roster);
 
   return (
     <section className="rounded-2xl p-4 sm:p-5 border-2"
@@ -8578,9 +8594,10 @@ function MeetDetail({ meet, swimStats }) {
 
 // === 選手對比 (A vs B) ===
 function CompareView({ swimStats }) {
+  const { roster } = useRoster();
   const [swimmerA, setSwimmerA] = useState(null);
   const [swimmerB, setSwimmerB] = useState(null);
-  const names = Object.keys(swimStats.swimmers);
+  const names = sortSwimmerNames(Object.keys(swimStats.swimmers), roster);
 
   // 計算 PB
   const calcPB = (name) => {
@@ -8700,6 +8717,7 @@ function CompareView({ swimStats }) {
 
 // === 完整成績清單（含篩選） ===
 function RecordsView({ swimStats }) {
+  const { roster } = useRoster();
   const [filterSwimmer, setFilterSwimmer] = useState("");
   const [filterMeet, setFilterMeet] = useState("");
   const [filterEvent, setFilterEvent] = useState("");
@@ -8766,7 +8784,7 @@ function RecordsView({ swimStats }) {
                 className="px-3 py-2 rounded-md border text-xs"
                 style={{ borderColor: "var(--line-strong)", background: "var(--bg)" }}>
           <option value="">所有選手</option>
-          {Object.keys(swimStats.swimmers || {}).map(n => <option key={n} value={n}>{n}</option>)}
+          {sortSwimmerNames(Object.keys(swimStats.swimmers || {}), roster).map(n => <option key={n} value={n}>{n}</option>)}
         </select>
         <select value={filterMeet} onChange={e => setFilterMeet(e.target.value)}
                 className="px-3 py-2 rounded-md border text-xs"
@@ -8867,6 +8885,7 @@ function InputView({ swimStats, setSwimStats, logAction, user }) {
 
 // === 整場比賽錄入 ===
 function MeetInput({ swimStats, setSwimStats, logAction }) {
+  const { roster } = useRoster();
   const [selectedMeet, setSelectedMeet] = useState("");
   const [showNewMeet, setShowNewMeet] = useState(false);
   const [newMeetName, setNewMeetName] = useState("");
@@ -8875,7 +8894,7 @@ function MeetInput({ swimStats, setSwimStats, logAction }) {
   const [saving, setSaving] = useState(false);
   const [saveResult, setSaveResult] = useState("");
 
-  const allNames = Object.keys(swimStats.swimmers || {});
+  const allNames = sortSwimmerNames(Object.keys(swimStats.swimmers || {}), roster);
 
   const applyLastSwimmers = () => {
     if (swimStats.meets.length === 0) return;
@@ -9107,7 +9126,7 @@ function MeetInput({ swimStats, setSwimStats, logAction }) {
                 </tr>
               </thead>
               <tbody>
-                {[...selectedSwimmers].map(name => (
+                {sortSwimmerNames([...selectedSwimmers], roster).map(name => (
                   <tr key={name}>
                     <td style={{
                       position: "sticky", left: 0, zIndex: 1,
@@ -9179,6 +9198,7 @@ function MeetInput({ swimStats, setSwimStats, logAction }) {
 
 // === 快速單筆輸入 ===
 function SingleInput({ swimStats, setSwimStats, logAction }) {
+  const { roster } = useRoster();
   const [name, setName] = useState("");
   const [meet, setMeet] = useState("");
   const [event, setEvent] = useState("");
@@ -9234,7 +9254,7 @@ function SingleInput({ swimStats, setSwimStats, logAction }) {
                   className="px-3 py-2 rounded-md border text-sm"
                   style={{ borderColor: "var(--line-strong)", background: "var(--bg)" }}>
             <option value="">選手</option>
-            {Object.keys(swimStats.swimmers || {}).map(n => <option key={n} value={n}>{n}</option>)}
+            {sortSwimmerNames(Object.keys(swimStats.swimmers || {}), roster).map(n => <option key={n} value={n}>{n}</option>)}
           </select>
           <select value={meet} onChange={e => setMeet(e.target.value)}
                   className="px-3 py-2 rounded-md border text-sm"
@@ -9277,6 +9297,7 @@ function SingleInput({ swimStats, setSwimStats, logAction }) {
 
 // === 選手 / 比賽管理 ===
 function SwimStatsManage({ swimStats, setSwimStats, logAction }) {
+  const { roster } = useRoster();
   const [newSwimmer, setNewSwimmer] = useState("");
   const [newMeet, setNewMeet] = useState("");
 
@@ -9298,6 +9319,24 @@ function SwimStatsManage({ swimStats, setSwimStats, logAction }) {
     delete next[n];
     await setSwimStats({ ...swimStats, swimmers: next });
     if (logAction) logAction("remove_swimmer", { target: n, targetLabel: `刪除選手：${n}` });
+  };
+
+  // 從點名名單批次匯入：把 roster 有、但成績沒有的選手全部加進來（空成績）
+  const syncFromRoster = async () => {
+    const existing = swimStats.swimmers || {};
+    const toAdd = (roster || []).map(p => p.name).filter(name => !existing[name]);
+    if (toAdd.length === 0) {
+      alert("點名名單上的選手都已在成績名單中");
+      return;
+    }
+    if (!confirm(`將從點名名單新增 ${toAdd.length} 位選手到成績名單：\n${toAdd.join("、")}`)) return;
+    const next = { ...existing };
+    toAdd.forEach(name => { next[name] = []; });
+    await setSwimStats({ ...swimStats, swimmers: next });
+    if (logAction) logAction("sync_swimmers_from_roster", {
+      target: "swim_stats",
+      targetLabel: `從點名名單匯入 ${toAdd.length} 位選手`,
+    });
   };
 
   const addMeet = async () => {
@@ -9336,10 +9375,20 @@ function SwimStatsManage({ swimStats, setSwimStats, logAction }) {
     <div className="space-y-3">
       <section className="rounded-xl p-3 border-2"
                style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
-        <div className="text-sm font-bold mb-2" style={{ color: "var(--ink)" }}>
-          選手管理 <span className="num text-xs font-normal" style={{ color: "var(--mute)" }}>
-            ({Object.keys(swimStats.swimmers || {}).length})
-          </span>
+        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+          <div className="text-sm font-bold" style={{ color: "var(--ink)" }}>
+            選手管理 <span className="num text-xs font-normal" style={{ color: "var(--mute)" }}>
+              ({Object.keys(swimStats.swimmers || {}).length})
+            </span>
+          </div>
+          <button onClick={syncFromRoster}
+                  className="btn-tactile px-2.5 py-1 rounded-md text-[11px] font-medium border"
+                  style={{ borderColor: "var(--accent-2)", color: "var(--accent-2)" }}>
+            ↻ 從點名名單匯入
+          </button>
+        </div>
+        <div className="text-[10px] mb-2" style={{ color: "var(--mute)" }}>
+          選手順序自動依照「點名名單」排列。橘點 = 不在點名名單上的選手。
         </div>
         <div className="flex gap-2 mb-3">
           <input type="text" value={newSwimmer} onChange={e => setNewSwimmer(e.target.value)}
@@ -9352,15 +9401,24 @@ function SwimStatsManage({ swimStats, setSwimStats, logAction }) {
                   style={{ background: "var(--green)", color: "#fff" }}>+ 新增</button>
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {Object.keys(swimStats.swimmers || {}).map(n => (
-            <div key={n} className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs border"
-                 style={{ borderColor: "var(--line-strong)", background: "var(--bg)" }}>
-              <span>{n}</span>
-              <button onClick={() => removeSwimmer(n)}
-                      className="text-[10px] hover:text-red-600"
-                      style={{ color: "var(--mute)" }}>✕</button>
-            </div>
-          ))}
+          {sortSwimmerNames(Object.keys(swimStats.swimmers || {}), roster).map(n => {
+            const inRoster = (roster || []).some(p => p.name === n);
+            return (
+              <div key={n} className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs border"
+                   style={{ borderColor: "var(--line-strong)", background: "var(--bg)" }}>
+                {!inRoster && (
+                  <span title="不在點名名單上" style={{
+                    width: 6, height: 6, borderRadius: "50%",
+                    background: "#E89B3C", display: "inline-block",
+                  }} />
+                )}
+                <span>{n}</span>
+                <button onClick={() => removeSwimmer(n)}
+                        className="text-[10px] hover:text-red-600"
+                        style={{ color: "var(--mute)" }}>✕</button>
+              </div>
+            );
+          })}
         </div>
       </section>
 
