@@ -7970,28 +7970,71 @@ function SwimmerView({ swimStats, selectedSwimmer, setSelectedSwimmer }) {
   const { roster } = useRoster();
   const names = sortSwimmerNames(Object.keys(swimStats.swimmers), roster);
 
+  // 依年級分組（比照點名：九 → 八 → 七 → 其他）
+  const nameGrade = {};
+  (roster || []).forEach(p => { nameGrade[p.name] = p.grade; });
+  const grouped = [9, 8, 7]
+    .map(g => ({ grade: g, label: GRADE_NAMES[g], members: names.filter(n => nameGrade[n] === g) }))
+    .filter(g => g.members.length > 0);
+  const others = names.filter(n => nameGrade[n] === undefined);
+
+  const renderBtn = (n) => {
+    const active = selectedSwimmer === n;
+    return (
+      <button key={n} onClick={() => setSelectedSwimmer(active ? null : n)}
+              className="btn-tactile px-2.5 py-1 rounded-md text-xs font-medium border"
+              style={{
+                background: active ? "var(--ink)" : "transparent",
+                color: active ? "var(--bg)" : "var(--ink-2)",
+                borderColor: active ? "var(--ink)" : "var(--line-strong)",
+              }}>
+        {n}
+      </button>
+    );
+  };
+
   return (
     <section className="rounded-2xl p-4 sm:p-5 border-2"
              style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
       <div className="text-[10px] tk-x mb-3" style={{ color: "var(--mute)" }}>
         選擇選手 · {names.length} 位
       </div>
-      {/* 選手選擇 */}
-      <div className="flex flex-wrap gap-1.5 mb-4">
-        {names.map(n => {
-          const active = selectedSwimmer === n;
-          return (
-            <button key={n} onClick={() => setSelectedSwimmer(active ? null : n)}
-                    className="btn-tactile px-2.5 py-1 rounded-md text-xs font-medium border"
-                    style={{
-                      background: active ? "var(--ink)" : "transparent",
-                      color: active ? "var(--bg)" : "var(--ink-2)",
-                      borderColor: active ? "var(--ink)" : "var(--line-strong)",
-                    }}>
-              {n}
-            </button>
-          );
-        })}
+      {/* 選手選擇（依年級分組） */}
+      <div className="space-y-3 mb-4">
+        {grouped.map(g => (
+          <div key={g.grade}>
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-xs font-bold px-2 py-0.5 rounded"
+                    style={{ background: "var(--accent-bg)", color: "var(--accent-2)" }}>
+                {g.label}
+              </span>
+              <span className="num text-[10px]" style={{ color: "var(--mute)" }}>
+                {g.members.length} 位
+              </span>
+              <span className="flex-1 h-px" style={{ background: "var(--line)" }} />
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {g.members.map(renderBtn)}
+            </div>
+          </div>
+        ))}
+        {others.length > 0 && (
+          <div>
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-xs font-bold px-2 py-0.5 rounded"
+                    style={{ background: "#FBE7D5", color: "#9A6420" }}>
+                其他
+              </span>
+              <span className="num text-[10px]" style={{ color: "var(--mute)" }}>
+                {others.length} 位（不在點名名單）
+              </span>
+              <span className="flex-1 h-px" style={{ background: "var(--line)" }} />
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {others.map(renderBtn)}
+            </div>
+          </div>
+        )}
       </div>
 
       {selectedSwimmer ? (
@@ -9072,21 +9115,53 @@ function MeetInput({ swimStats, setSwimStats, logAction }) {
                     style={{ borderColor: "var(--accent)", color: "var(--accent-2)" }}>套用上一場</button>
           </div>
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          {allNames.map(n => {
-            const sel = selectedSwimmers.has(n);
+        <div className="space-y-2.5">
+          {(() => {
+            const nameGrade = {};
+            (roster || []).forEach(p => { nameGrade[p.name] = p.grade; });
+            const groups = [9, 8, 7]
+              .map(g => ({ grade: g, label: GRADE_NAMES[g], members: allNames.filter(n => nameGrade[n] === g) }))
+              .filter(g => g.members.length > 0);
+            const others = allNames.filter(n => nameGrade[n] === undefined);
+            const renderChip = (n) => {
+              const sel = selectedSwimmers.has(n);
+              return (
+                <button key={n} onClick={() => toggleSwimmer(n)}
+                        className="btn-tactile px-2 py-1 rounded text-[11px] sm:text-xs font-medium border"
+                        style={{
+                          background: sel ? "var(--accent-2)" : "transparent",
+                          color: sel ? "#fff" : "var(--ink-2)",
+                          borderColor: sel ? "var(--accent-2)" : "var(--line-strong)",
+                        }}>
+                  {sel && "✓ "}{n}
+                </button>
+              );
+            };
             return (
-              <button key={n} onClick={() => toggleSwimmer(n)}
-                      className="btn-tactile px-2 py-1 rounded text-[11px] sm:text-xs font-medium border"
-                      style={{
-                        background: sel ? "var(--accent-2)" : "transparent",
-                        color: sel ? "#fff" : "var(--ink-2)",
-                        borderColor: sel ? "var(--accent-2)" : "var(--line-strong)",
-                      }}>
-                {sel && "✓ "}{n}
-              </button>
+              <>
+                {groups.map(g => (
+                  <div key={g.grade}>
+                    <div className="text-[10px] font-bold mb-1" style={{ color: "var(--accent-2)" }}>
+                      {g.label}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {g.members.map(renderChip)}
+                    </div>
+                  </div>
+                ))}
+                {others.length > 0 && (
+                  <div>
+                    <div className="text-[10px] font-bold mb-1" style={{ color: "#9A6420" }}>
+                      其他
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {others.map(renderChip)}
+                    </div>
+                  </div>
+                )}
+              </>
             );
-          })}
+          })()}
         </div>
       </section>
 
