@@ -7911,6 +7911,9 @@ function SwimStatsView({ swimStats, setSwimStats, swimStatsLoaded, isAdmin, isOw
           swimStats={swimStats}
           selectedSwimmer={selectedSwimmer}
           setSelectedSwimmer={setSelectedSwimmer}
+          setSwimStats={setSwimStats}
+          isOwner={isOwner}
+          logAction={logAction}
         />
       )}
       {subTab === "event" && (
@@ -7966,9 +7969,17 @@ function SwimStatsView({ swimStats, setSwimStats, swimStatsLoaded, isAdmin, isOw
 }
 
 // === 選手檢視 ===
-function SwimmerView({ swimStats, selectedSwimmer, setSelectedSwimmer }) {
+function SwimmerView({ swimStats, selectedSwimmer, setSelectedSwimmer, setSwimStats, isOwner, logAction }) {
   const { roster } = useRoster();
-  const names = sortSwimmerNames(Object.keys(swimStats.swimmers), roster);
+
+  // B：合併「成績有的名字」+「roster 全員」→ 確保 roster 上的新選手也會出現
+  const statNames = Object.keys(swimStats.swimmers || {});
+  const rosterNames = (roster || []).map(p => p.name);
+  const allNamesSet = new Set([...statNames, ...rosterNames]);
+  const names = sortSwimmerNames([...allNamesSet], roster);
+
+  // 哪些名字「有成績紀錄」（用來標示「尚無成績」）
+  const hasRecords = (n) => (swimStats.swimmers[n] || []).length > 0;
 
   // 依年級分組（比照點名：九 → 八 → 七 → 其他）
   const nameGrade = {};
@@ -7978,17 +7989,23 @@ function SwimmerView({ swimStats, selectedSwimmer, setSelectedSwimmer }) {
     .filter(g => g.members.length > 0);
   const others = names.filter(n => nameGrade[n] === undefined);
 
+  // C：偵測「可能改名」的選手 = 有成績、但名字不在 roster 上
+  const orphanNames = statNames.filter(n => !rosterNames.includes(n) && hasRecords(n));
+
   const renderBtn = (n) => {
     const active = selectedSwimmer === n;
+    const noRec = !hasRecords(n);
     return (
       <button key={n} onClick={() => setSelectedSwimmer(active ? null : n)}
-              className="btn-tactile px-2.5 py-1 rounded-md text-xs font-medium border"
+              className="btn-tactile px-2.5 py-1 rounded-md text-xs font-medium border inline-flex items-center gap-1"
               style={{
                 background: active ? "var(--ink)" : "transparent",
-                color: active ? "var(--bg)" : "var(--ink-2)",
+                color: active ? "var(--bg)" : (noRec ? "var(--mute)" : "var(--ink-2)"),
                 borderColor: active ? "var(--ink)" : "var(--line-strong)",
+                borderStyle: noRec ? "dashed" : "solid",
               }}>
         {n}
+        {noRec && <span className="text-[9px]" style={{ opacity: 0.7 }}>·無成績</span>}
       </button>
     );
   };
@@ -7999,6 +8016,18 @@ function SwimmerView({ swimStats, selectedSwimmer, setSelectedSwimmer }) {
       <div className="text-[10px] tk-x mb-3" style={{ color: "var(--mute)" }}>
         選擇選手 · {names.length} 位
       </div>
+
+      {/* C：改名偵測提示（只有主管理員看得到 + 能操作） */}
+      {isOwner && orphanNames.length > 0 && setSwimStats && (
+        <RenameDetector
+          orphanNames={orphanNames}
+          roster={roster}
+          swimStats={swimStats}
+          setSwimStats={setSwimStats}
+          logAction={logAction}
+        />
+      )}
+
       {/* 選手選擇（依年級分組） */}
       <div className="space-y-3 mb-4">
         {grouped.map(g => (
@@ -8046,6 +8075,95 @@ function SwimmerView({ swimStats, selectedSwimmer, setSelectedSwimmer }) {
         </div>
       )}
     </section>
+  );
+}
+
+// === C：改名偵測 + 對應工具（主管理員專用） ===
+function RenameDetector({ orphanNames, roster, swimStats, setSwimStats, logAction }) {
+  const [open, setOpen] = useState(false);
+  const [mapping, setMapping] = useState({});  // { 舊名: 新名 }
+  const [busy, setBusy] = useState(false);
+
+  // roster 上「沒有成績」的名字 = 可能的新名字候選
+  const statNames = Object.keys(swimStats.swimmers || {});
+  const candidates = (roster || [])
+    .map(p => p.name)
+    .filter(name => !statNames.includes(name));  // roster 有、成績沒有 → 可能是改名後的新名字
+
+  const applyRename = async (oldName) => {
+    const newName = mapping[oldName];
+    if (!newName) return;
+    if (!confirm(`將成績選手「${oldName}」改名為「${newName}」？\n所有歷史成績會一併轉移。`)) return;
+    setBusy(true);
+    try {
+      const next = { ...swimStats.swimmers };
+      // 把舊名的成績搬到新名（若新名已存在則合併，以新名為主）
+      const oldRecords = next[oldName] || [];
+      const existingNew = next[newName] || [];
+      next[newName] = [...existingNew, ...oldRecords];
+      delete next[oldName];
+      await setSwimStats({ ...swimStats, swimmers: next });
+      if (logAction) logAction("rename_swimmer", {
+        target: `${oldName}→${newName}`,
+        targetLabel: `成績選手改名：${oldName} → ${newName}`,
+      });
+      setMapping(m => { const c = { ...m }; delete c[oldName]; return c; });
+    } catch (e) {
+      alert("改名失敗：" + e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mb-4 rounded-xl border-2 overflow-hidden"
+         style={{ borderColor: "#E89B3C", background: "#FFF8F0" }}>
+      <button onClick={() => setOpen(!open)}
+              className="w-full flex items-center justify-between px-3 py-2.5 text-left">
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize: 16 }}>⚠️</span>
+          <span className="text-sm font-bold" style={{ color: "#9A6420" }}>
+            偵測到 {orphanNames.length} 位選手可能改名了
+          </span>
+        </div>
+        <span style={{ color: "#9A6420" }}>{open ? "▲" : "▼"}</span>
+      </button>
+
+      {open && (
+        <div className="px-3 pb-3 space-y-2">
+          <div className="text-[11px] leading-relaxed px-2 py-1.5 rounded"
+               style={{ background: "#FBEAD5", color: "#7A5018" }}>
+            這些選手有比賽成績，但名字不在目前的點名名單上。<br/>
+            可能原因：① 在點名改了名字 → 請對應到新名字 ② 已畢業 → 不用處理（保留歷史成績）
+          </div>
+          {orphanNames.map(oldName => (
+            <div key={oldName} className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-medium px-2 py-1 rounded"
+                    style={{ background: "#FBE7D5", color: "#9A6420" }}>
+                {oldName}
+              </span>
+              <span style={{ color: "var(--mute)" }}>→</span>
+              <select value={mapping[oldName] || ""}
+                      onChange={e => setMapping(m => ({ ...m, [oldName]: e.target.value }))}
+                      className="flex-1 min-w-[120px] px-2 py-1 rounded border text-sm"
+                      style={{ borderColor: "var(--line-strong)", background: "#fff" }}>
+                <option value="">-- 對應到點名名單上的選手 --</option>
+                {candidates.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <button onClick={() => applyRename(oldName)}
+                      disabled={!mapping[oldName] || busy}
+                      className="btn-tactile px-3 py-1 rounded text-xs font-medium"
+                      style={{
+                        background: mapping[oldName] && !busy ? "var(--green)" : "var(--line)",
+                        color: mapping[oldName] && !busy ? "#fff" : "var(--mute)",
+                      }}>
+                轉移成績
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
