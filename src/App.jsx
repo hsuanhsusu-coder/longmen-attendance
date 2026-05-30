@@ -6321,69 +6321,197 @@ function PendingApprovalSection({ config, setConfig, user, logAction }) {
 
 function ViewerListSection({ config, setConfig, user, isOwner, logAction }) {
   const viewers = config.viewers || [];
+  const userNotes = config.userNotes || {};
   const [confirmRemove, setConfirmRemove] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [newNote, setNewNote] = useState("");
+  const [editingNote, setEditingNote] = useState(null);
+  const [editNoteVal, setEditNoteVal] = useState("");
 
-  if (viewers.length === 0) return null;
+  const add = async () => {
+    const email = newEmail.trim().toLowerCase();
+    if (!email) return;
+    if (!email.includes("@")) { alert("請輸入有效的 email"); return; }
+    if (viewers.map(e => e.toLowerCase()).includes(email)) { alert("這個 email 已經是訪客"); return; }
+    if ((config.owner || "").toLowerCase() === email) { alert("這是主管理員的 email"); return; }
+    if ((config.admins || []).map(e => e.toLowerCase()).includes(email)) { alert("這個 email 已是一般管理員"); return; }
+    const newPending = (config.pending || []).filter(p => (p.email || "").toLowerCase() !== email);
+    const newNotes = { ...userNotes };
+    if (newNote.trim()) newNotes[email] = newNote.trim();
+    await setConfig({
+      ...config,
+      viewers: [...viewers, email],
+      pending: newPending,
+      userNotes: newNotes,
+    });
+    setNewEmail("");
+    setNewNote("");
+    setAdding(false);
+    if (logAction) {
+      logAction("add_viewer", {
+        target: email,
+        targetLabel: `新增訪客 - ${email}${newNote.trim() ? `（${newNote.trim()}）` : ""}`,
+      });
+    }
+  };
 
   const remove = (email) => {
     const newViewers = viewers.filter(v => v !== email);
-    setConfig({ ...config, viewers: newViewers });
-    if (logAction) {
-      logAction("remove_viewer", {
-        target: email,
-        targetLabel: `移除訪客 - ${email}`,
-      });
-    }
+    const newNotes = { ...userNotes };
+    delete newNotes[email];
+    setConfig({ ...config, viewers: newViewers, userNotes: newNotes });
+    if (logAction) logAction("remove_viewer", { target: email, targetLabel: `移除訪客 - ${email}` });
     setConfirmRemove(null);
+  };
+
+  const saveNote = async (email) => {
+    const trimmed = editNoteVal.trim();
+    const newNotes = { ...userNotes };
+    if (trimmed) newNotes[email] = trimmed;
+    else delete newNotes[email];
+    await setConfig({ ...config, userNotes: newNotes });
+    setEditingNote(null);
+    if (logAction) logAction("edit_user_note", {
+      target: email,
+      targetLabel: `編輯備註 - ${email}：${trimmed || "（清除）"}`,
+    });
   };
 
   return (
     <section className="rounded-2xl p-4 sm:p-5 border-2"
              style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div>
           <div className="text-[10px] tk-x mb-1" style={{ color: "var(--mute)" }}>
             VIEWERS · 訪客清單（可看不能編輯）
           </div>
           <div className="display-cn text-lg" style={{ color: "var(--ink)" }}>
-            共 <span className="num">{viewers.length}</span> 位
+            共 <span className="num">{viewers.length}</span> 位 <span style={{ fontSize: 18 }}>👀</span>
           </div>
         </div>
-        <span style={{ fontSize: 22 }}>👀</span>
+        {isOwner && !adding && (
+          <button onClick={() => setAdding(true)}
+                  className="btn-tactile flex items-center gap-1 px-3 py-1.5 rounded-full font-medium text-xs"
+                  style={{ background: "var(--accent-2)", color: "#fff" }}>
+            <Plus size={14} strokeWidth={2.5} />
+            新增訪客
+          </button>
+        )}
       </div>
-      <div className="space-y-1.5">
-        {viewers.map(email => (
-          <div key={email} className="flex items-center gap-2 px-3 py-2 rounded-lg"
-               style={{ background: "var(--bg)", border: "1px solid var(--line)" }}>
-            <User size={13} strokeWidth={2.5} style={{ color: "var(--mute)" }} />
-            <span className="num text-sm flex-1 break-all" style={{ color: "var(--ink-2)" }}>
-              {email}
-            </span>
-            {isOwner && (
-              confirmRemove === email ? (
-                <div className="flex gap-1">
-                  <button onClick={() => setConfirmRemove(null)}
-                          className="btn-tactile px-2 py-1 rounded-md text-[10px] border"
-                          style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
-                    取消
-                  </button>
-                  <button onClick={() => remove(email)}
-                          className="btn-tactile px-2 py-1 rounded-md text-[10px] font-medium"
-                          style={{ background: "var(--red)", color: "#fff" }}>
-                    確認移除
-                  </button>
-                </div>
-              ) : (
-                <button onClick={() => setConfirmRemove(email)}
-                        className="btn-tactile w-7 h-7 rounded-md flex items-center justify-center"
-                        style={{ background: "var(--panel-2)", color: "var(--mute)" }}>
-                  <X size={12} strokeWidth={2.5} />
-                </button>
-              )
-            )}
+
+      {isOwner && (
+        <div className="text-[11px] mb-3 px-3 py-2 rounded-lg"
+             style={{ background: "var(--accent-bg)", color: "var(--accent-2)" }}>
+          💡 直接新增家長 email 後,對方用該 email 登入即可看見資料。建議填備註（誰的家長）方便管理。
+        </div>
+      )}
+
+      {adding && (
+        <div className="mb-3 p-3 rounded-lg space-y-2" style={{ background: "var(--accent-bg)" }}>
+          <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)}
+                 placeholder="家長 email,例如 parent@gmail.com"
+                 className="w-full px-3 py-2 rounded-md border-2 text-sm num"
+                 style={{ borderColor: "var(--accent-2)", background: "#fff" }} />
+          <input type="text" value={newNote} onChange={e => setNewNote(e.target.value)}
+                 onKeyDown={e => e.key === "Enter" && add()}
+                 placeholder="備註,例如：李晨睿的媽媽（選填）"
+                 className="w-full px-3 py-2 rounded-md border-2 text-sm"
+                 style={{ borderColor: "var(--accent-2)", background: "#fff" }} />
+          <div className="flex gap-2">
+            <button onClick={add} disabled={!newEmail.trim()}
+                    className="btn-tactile flex-1 px-3 py-2 rounded-md text-xs font-medium"
+                    style={{
+                      background: newEmail.trim() ? "var(--accent-2)" : "var(--line)",
+                      color: newEmail.trim() ? "#fff" : "var(--mute)",
+                    }}>確認</button>
+            <button onClick={() => { setAdding(false); setNewEmail(""); setNewNote(""); }}
+                    className="btn-tactile px-3 py-2 rounded-md text-xs"
+                    style={{ color: "var(--mute)" }}>取消</button>
           </div>
-        ))}
-      </div>
+        </div>
+      )}
+
+      {viewers.length === 0 ? (
+        <div className="text-center py-6 text-sm" style={{ color: "var(--mute)" }}>
+          目前沒有訪客
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {viewers.map(email => {
+            const note = userNotes[email] || "";
+            const isEditing = editingNote === email;
+            return (
+              <div key={email} className="px-3 py-2 rounded-lg"
+                   style={{ background: "var(--bg)", border: "1px solid var(--line)" }}>
+                <div className="flex items-center gap-2">
+                  <User size={13} strokeWidth={2.5} style={{ color: "var(--mute)" }} />
+                  <span className="num text-sm flex-1 break-all" style={{ color: "var(--ink-2)" }}>
+                    {email}
+                  </span>
+                  {isOwner && !isEditing && (
+                    confirmRemove === email ? (
+                      <div className="flex gap-1">
+                        <button onClick={() => setConfirmRemove(null)}
+                                className="btn-tactile px-2 py-1 rounded-md text-[10px] border"
+                                style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+                          取消
+                        </button>
+                        <button onClick={() => remove(email)}
+                                className="btn-tactile px-2 py-1 rounded-md text-[10px] font-medium"
+                                style={{ background: "var(--red)", color: "#fff" }}>
+                          確認移除
+                        </button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setConfirmRemove(email)}
+                              className="btn-tactile w-7 h-7 rounded-md flex items-center justify-center"
+                              style={{ background: "var(--panel-2)", color: "var(--mute)" }}>
+                        <X size={12} strokeWidth={2.5} />
+                      </button>
+                    )
+                  )}
+                </div>
+                {isEditing ? (
+                  <div className="flex gap-1 mt-1.5 pl-5">
+                    <input type="text" value={editNoteVal} onChange={e => setEditNoteVal(e.target.value)}
+                           onKeyDown={e => e.key === "Enter" && saveNote(email)}
+                           autoFocus
+                           placeholder="例如：李晨睿的媽媽"
+                           className="flex-1 px-2 py-1 rounded border text-xs"
+                           style={{ borderColor: "var(--accent-2)", background: "#fff" }} />
+                    <button onClick={() => saveNote(email)}
+                            className="btn-tactile px-2 py-1 rounded text-[10px] font-medium"
+                            style={{ background: "var(--green)", color: "#fff" }}>儲存</button>
+                    <button onClick={() => setEditingNote(null)}
+                            className="btn-tactile px-2 py-1 rounded text-[10px]"
+                            style={{ color: "var(--mute)" }}>取消</button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 mt-0.5 pl-5">
+                    {note ? (
+                      <span className="text-[11px]" style={{ color: "var(--ink)" }}>
+                        📝 {note}
+                      </span>
+                    ) : (
+                      <span className="text-[11px]" style={{ color: "var(--mute)", opacity: 0.6 }}>
+                        （無備註）
+                      </span>
+                    )}
+                    {isOwner && (
+                      <button onClick={() => { setEditingNote(email); setEditNoteVal(note); }}
+                              className="text-[10px] underline"
+                              style={{ color: "var(--mute)" }}>
+                        {note ? "編輯" : "加備註"}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }
@@ -6391,8 +6519,12 @@ function ViewerListSection({ config, setConfig, user, isOwner, logAction }) {
 function AdminListSection({ user, config, setConfig, isOwner, logAction }) {
   const [adding, setAdding] = useState(false);
   const [newEmail, setNewEmail] = useState("");
+  const [newNote, setNewNote] = useState("");
+  const [editingNote, setEditingNote] = useState(null);
+  const [editNoteVal, setEditNoteVal] = useState("");
   const [confirmRemove, setConfirmRemove] = useState(null);
   const admins = config.admins || [];
+  const userNotes = config.userNotes || {};
   const ownerEmail = (config.owner || "").toLowerCase();
   const userEmail = (user.email || "").toLowerCase();
 
@@ -6401,25 +6533,30 @@ function AdminListSection({ user, config, setConfig, isOwner, logAction }) {
     if (!trimmed || !trimmed.includes("@")) return;
     if (admins.map(a => a.toLowerCase()).includes(trimmed)) {
       setNewEmail("");
+      setNewNote("");
       setAdding(false);
       return;
     }
-    setConfig({ ...config, admins: [...admins, trimmed] });
+    const newNotes = { ...userNotes };
+    if (newNote.trim()) newNotes[trimmed] = newNote.trim();
+    setConfig({ ...config, admins: [...admins, trimmed], userNotes: newNotes });
     if (logAction) {
       logAction("add_admin", {
         target: trimmed,
-        targetLabel: `新增管理員 - ${trimmed}`,
+        targetLabel: `新增管理員 - ${trimmed}${newNote.trim() ? `（${newNote.trim()}）` : ""}`,
       });
     }
     setNewEmail("");
+    setNewNote("");
     setAdding(false);
   };
 
   const removeAdmin = (email) => {
     if (admins.length <= 1) return;
-    // 不能移除主管理員（owner）
     if (email.toLowerCase() === ownerEmail) return;
-    setConfig({ ...config, admins: admins.filter(a => a !== email) });
+    const newNotes = { ...userNotes };
+    delete newNotes[email];
+    setConfig({ ...config, admins: admins.filter(a => a !== email), userNotes: newNotes });
     if (logAction) {
       logAction("remove_admin", {
         target: email,
@@ -6427,6 +6564,19 @@ function AdminListSection({ user, config, setConfig, isOwner, logAction }) {
       });
     }
     setConfirmRemove(null);
+  };
+
+  const saveNote = async (email) => {
+    const trimmed = editNoteVal.trim();
+    const newNotes = { ...userNotes };
+    if (trimmed) newNotes[email] = trimmed;
+    else delete newNotes[email];
+    await setConfig({ ...config, userNotes: newNotes });
+    setEditingNote(null);
+    if (logAction) logAction("edit_user_note", {
+      target: email,
+      targetLabel: `編輯備註 - ${email}：${trimmed || "（清除）"}`,
+    });
   };
 
   return (
@@ -6452,27 +6602,36 @@ function AdminListSection({ user, config, setConfig, isOwner, logAction }) {
       </div>
 
       {adding && (
-        <div className="mb-3 rounded-lg p-3" style={{ background: "var(--panel)", border: "2px solid var(--accent-2)" }}>
-          <div className="text-[11px] tk-l mb-1" style={{ color: "var(--mute)" }}>新管理員 Email</div>
-          <div className="flex gap-2">
+        <div className="mb-3 rounded-lg p-3 space-y-2" style={{ background: "var(--panel)", border: "2px solid var(--accent-2)" }}>
+          <div>
+            <div className="text-[11px] tk-l mb-1" style={{ color: "var(--mute)" }}>新管理員 Email</div>
             <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)}
-                   onKeyDown={e => e.key === "Enter" && addAdmin()}
                    placeholder="example@gmail.com"
-                   className="flex-1 px-3 py-2 rounded-md border-2 text-sm num"
+                   className="w-full px-3 py-2 rounded-md border-2 text-sm num"
                    style={{ borderColor: "var(--line)" }}
                    autoFocus />
-            <button onClick={() => { setAdding(false); setNewEmail(""); }}
-                    className="btn-tactile px-3 py-2 rounded-md border text-xs"
+          </div>
+          <div>
+            <div className="text-[11px] tk-l mb-1" style={{ color: "var(--mute)" }}>備註（選填）</div>
+            <input type="text" value={newNote} onChange={e => setNewNote(e.target.value)}
+                   onKeyDown={e => e.key === "Enter" && addAdmin()}
+                   placeholder="例如：總教練 / 助教 / 體育老師"
+                   className="w-full px-3 py-2 rounded-md border-2 text-sm"
+                   style={{ borderColor: "var(--line)" }} />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => { setAdding(false); setNewEmail(""); setNewNote(""); }}
+                    className="btn-tactile flex-1 px-3 py-2 rounded-md border text-xs"
                     style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
               取消
             </button>
             <button onClick={addAdmin}
-                    className="btn-tactile px-3 py-2 rounded-md border-2 text-xs font-medium"
+                    className="btn-tactile flex-1 px-3 py-2 rounded-md border-2 text-xs font-medium"
                     style={{ borderColor: "var(--accent-2)", background: "var(--accent-2)", color: "#fff" }}>
               加入
             </button>
           </div>
-          <div className="text-[10px] mt-2 leading-relaxed" style={{ color: "var(--mute)" }}>
+          <div className="text-[10px] leading-relaxed" style={{ color: "var(--mute)" }}>
             必須是對方用來登入的 Google 帳號 Email，他下次刷新頁面就會獲得管理權限。
           </div>
         </div>
@@ -6483,43 +6642,85 @@ function AdminListSection({ user, config, setConfig, isOwner, logAction }) {
           const isMe = email.toLowerCase() === userEmail;
           const isOwnerEntry = email.toLowerCase() === ownerEmail;
           const canRemove = admins.length > 1 && !isOwnerEntry;
+          const note = userNotes[email] || "";
+          const isEditing = editingNote === email;
           return (
-            <div key={email} className="flex items-center gap-2 px-3 py-2 rounded-lg"
+            <div key={email} className="px-3 py-2 rounded-lg"
                  style={{
                    background: "var(--panel)",
                    border: isOwnerEntry ? "2px solid var(--accent-2)" : "1px solid var(--accent)",
                  }}>
-              {isOwnerEntry ? (
-                <Crown size={13} strokeWidth={2.5} style={{ color: "#F6C53C", fill: "#F6C53C" }} />
+              <div className="flex items-center gap-2">
+                {isOwnerEntry ? (
+                  <Crown size={13} strokeWidth={2.5} style={{ color: "#F6C53C", fill: "#F6C53C" }} />
+                ) : (
+                  <User size={13} strokeWidth={2.5} style={{ color: "var(--accent-2)" }} />
+                )}
+                <span className="num text-sm flex-1 break-all" style={{ color: "var(--accent-2)" }}>
+                  {email}
+                </span>
+                {isOwnerEntry && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                        style={{ background: "var(--accent-2)", color: "#F6C53C", border: "1px solid #F6C53C" }}>
+                    主管理員
+                  </span>
+                )}
+                {isMe && !isOwnerEntry && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                        style={{ background: "var(--accent-2)", color: "#fff" }}>
+                    你
+                  </span>
+                )}
+                {!isEditing && (
+                  <button onClick={() => setConfirmRemove(email)}
+                          disabled={!canRemove}
+                          title={isOwnerEntry ? "主管理員不能被移除" : canRemove ? "移除管理員" : "至少需保留一位管理員"}
+                          className="btn-tactile w-7 h-7 rounded flex items-center justify-center"
+                          style={{
+                            color: canRemove ? "var(--red)" : "var(--line-strong)",
+                            cursor: canRemove ? "pointer" : "not-allowed",
+                            opacity: canRemove ? 1 : 0.4,
+                          }}>
+                    <X size={14} strokeWidth={2.5} />
+                  </button>
+                )}
+              </div>
+              {/* 備註行 */}
+              {isEditing ? (
+                <div className="flex gap-1 mt-1.5 pl-5">
+                  <input type="text" value={editNoteVal} onChange={e => setEditNoteVal(e.target.value)}
+                         onKeyDown={e => e.key === "Enter" && saveNote(email)}
+                         autoFocus
+                         placeholder="例如：總教練 / 助教"
+                         className="flex-1 px-2 py-1 rounded border text-xs"
+                         style={{ borderColor: "var(--accent-2)", background: "#fff" }} />
+                  <button onClick={() => saveNote(email)}
+                          className="btn-tactile px-2 py-1 rounded text-[10px] font-medium"
+                          style={{ background: "var(--green)", color: "#fff" }}>儲存</button>
+                  <button onClick={() => setEditingNote(null)}
+                          className="btn-tactile px-2 py-1 rounded text-[10px]"
+                          style={{ color: "var(--mute)" }}>取消</button>
+                </div>
               ) : (
-                <User size={13} strokeWidth={2.5} style={{ color: "var(--accent-2)" }} />
+                <div className="flex items-center gap-1.5 mt-0.5 pl-5">
+                  {note ? (
+                    <span className="text-[11px]" style={{ color: "var(--ink)" }}>
+                      📝 {note}
+                    </span>
+                  ) : (
+                    <span className="text-[11px]" style={{ color: "var(--mute)", opacity: 0.6 }}>
+                      （無備註）
+                    </span>
+                  )}
+                  {isOwner && (
+                    <button onClick={() => { setEditingNote(email); setEditNoteVal(note); }}
+                            className="text-[10px] underline"
+                            style={{ color: "var(--mute)" }}>
+                      {note ? "編輯" : "加備註"}
+                    </button>
+                  )}
+                </div>
               )}
-              <span className="num text-sm flex-1 break-all" style={{ color: "var(--accent-2)" }}>
-                {email}
-              </span>
-              {isOwnerEntry && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                      style={{ background: "var(--accent-2)", color: "#F6C53C", border: "1px solid #F6C53C" }}>
-                  主管理員
-                </span>
-              )}
-              {isMe && !isOwnerEntry && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                      style={{ background: "var(--accent-2)", color: "#fff" }}>
-                  你
-                </span>
-              )}
-              <button onClick={() => setConfirmRemove(email)}
-                      disabled={!canRemove}
-                      title={isOwnerEntry ? "主管理員不能被移除" : canRemove ? "移除管理員" : "至少需保留一位管理員"}
-                      className="btn-tactile w-7 h-7 rounded flex items-center justify-center"
-                      style={{
-                        color: canRemove ? "var(--red)" : "var(--line-strong)",
-                        cursor: canRemove ? "pointer" : "not-allowed",
-                        opacity: canRemove ? 1 : 0.4,
-                      }}>
-                <X size={14} strokeWidth={2.5} />
-              </button>
             </div>
           );
         })}
