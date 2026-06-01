@@ -4621,15 +4621,21 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
     if (late && (status === "on_time" || status === "bonus")) {
       s = { t: "🕐", bg: "#E07B30", fg: "#fff", bd: "#A85518" };
     }
+    // 用 flexbox 強制置中（html2canvas 對 lineHeight 渲染常出錯，flex 較穩定）
     return (
       <span style={{
-        display: "inline-block", width: 16, height: 16,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 16, height: 16,
         background: s.bg, color: s.fg, borderRadius: 3,
         border: `1px solid ${s.bd}`,
-        fontSize: late ? 9 : 11, fontWeight: 900, textAlign: "center",
-        lineHeight: late ? "13px" : "14px",
-        fontFamily: "system-ui, sans-serif",
+        fontSize: late ? 10 : 12,
+        fontWeight: 900,
+        fontFamily: "-apple-system, 'PingFang TC', 'Microsoft JhengHei', sans-serif",
         boxSizing: "border-box",
+        lineHeight: 1,
+        verticalAlign: "middle",
       }}>{s.t}</span>
     );
   };
@@ -4726,11 +4732,21 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
               if (!cardRef.current) {
                 throw new Error("找不到截圖元件");
               }
+              // 等字型載入完（避免文字跑版）
+              if (document.fonts && document.fonts.ready) {
+                try { await document.fonts.ready; } catch {}
+              }
+              // 強制取得卡片實際寬度，固定 viewport 寬度避免 flex/grid 跑掉
+              const cardW = cardRef.current.offsetWidth;
               const canvas = await window.html2canvas(cardRef.current, {
                 backgroundColor: "#FFFCF6",
                 scale: 2,  // 高解析度
                 useCORS: true,
                 logging: false,
+                width: cardW,
+                windowWidth: cardW,
+                // 避免 transform 干擾
+                foreignObjectRendering: false,
               });
               // 轉成 Blob
               const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
