@@ -4597,46 +4597,63 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
 
   // Tiny status chip - 4 distinct outcomes (+ late variant)
   // sessionStarted: 該場次是否已有人被點名（沒開始時 pending 顯示 — 而非 ?）
+  // 用 inline SVG 完全取代文字符號 — html2canvas 對 SVG path 處理穩定,不會跑位
   const Tiny = ({ status, late, sessionStarted = true }) => {
     const map = {
-      // 表定+到 = 正常出席 (深綠實心)
-      on_time:           { t: "✓", bg: "#1F5C3A", fg: "#fff", bd: "transparent" },
-      // 表定+缺 = 缺席 (鮮紅 + 邊框，最醒目)
-      no_show:           { t: "✗", bg: "#B23A28", fg: "#fff", bd: "#7A1F0F" },
-      // 表定+未點 (亮黃)
-      pending:           { t: "?", bg: "#F6C53C", fg: "#3D2F00", bd: "transparent" },
-      // 不表定+到 = 補訓 (鮮藍實心)
-      bonus:             { t: "+", bg: "#2F4FA8", fg: "#fff", bd: "transparent" },
-      // 不表定+缺 = 已請假 (淺灰，幾乎隱形)
-      confirmed_excused: { t: "—", bg: "#EAE3D4", fg: "#8B8275", bd: "transparent" },
-      // 不表定+未點 = 無訓練 (淺灰)
-      pending_excused:   { t: "—", bg: "#EAE3D4", fg: "#B7AC93", bd: "transparent" },
+      on_time:           { shape: "check",  bg: "#1F5C3A", fg: "#fff", bd: "transparent" },
+      no_show:           { shape: "x",      bg: "#B23A28", fg: "#fff", bd: "#7A1F0F" },
+      pending:           { shape: "q",      bg: "#F6C53C", fg: "#3D2F00", bd: "transparent" },
+      bonus:             { shape: "plus",   bg: "#2F4FA8", fg: "#fff", bd: "transparent" },
+      confirmed_excused: { shape: "dash",   bg: "#EAE3D4", fg: "#8B8275", bd: "transparent" },
+      pending_excused:   { shape: "dash",   bg: "#EAE3D4", fg: "#B7AC93", bd: "transparent" },
     };
     let s = map[status] || map.pending_excused;
-    // 場次未開始時，pending 變灰 — 而不是黃 ?
     if (!sessionStarted && status === "pending") {
-      s = { t: "·", bg: "#EAE3D4", fg: "#B7AC93", bd: "transparent" };
+      s = { shape: "dot", bg: "#EAE3D4", fg: "#B7AC93", bd: "transparent" };
     }
-    // 遲到時：橘色背景，符號改鐘
     if (late && (status === "on_time" || status === "bonus")) {
-      s = { t: "🕐", bg: "#E07B30", fg: "#fff", bd: "#A85518" };
+      s = { shape: "clock", bg: "#E07B30", fg: "#fff", bd: "#A85518" };
     }
-    // 用 flexbox 強制置中（html2canvas 對 lineHeight 渲染常出錯，flex 較穩定）
+    // SVG 圖示（24x24 viewBox,顯示為 16x16）
+    const renderShape = () => {
+      const stroke = s.fg;
+      const sw = 3;  // 粗筆畫,即使縮小也清楚
+      switch (s.shape) {
+        case "check":
+          return <path d="M5 12 L10 17 L19 7" stroke={stroke} strokeWidth={sw} fill="none" strokeLinecap="round" strokeLinejoin="round" />;
+        case "x":
+          return <><path d="M7 7 L17 17" stroke={stroke} strokeWidth={sw} strokeLinecap="round" /><path d="M17 7 L7 17" stroke={stroke} strokeWidth={sw} strokeLinecap="round" /></>;
+        case "plus":
+          return <><path d="M12 6 L12 18" stroke={stroke} strokeWidth={sw} strokeLinecap="round" /><path d="M6 12 L18 12" stroke={stroke} strokeWidth={sw} strokeLinecap="round" /></>;
+        case "dash":
+          return <path d="M6 12 L18 12" stroke={stroke} strokeWidth={sw} strokeLinecap="round" />;
+        case "dot":
+          return <circle cx="12" cy="12" r="2" fill={stroke} />;
+        case "q":
+          // 問號用簡單兩段組成（避免字型問題）
+          return <><path d="M9 9 Q9 6 12 6 Q15 6 15 9 Q15 11 12 12 L12 14" stroke={stroke} strokeWidth={sw} fill="none" strokeLinecap="round" strokeLinejoin="round" /><circle cx="12" cy="17.5" r="1.3" fill={stroke} /></>;
+        case "clock":
+          return <><circle cx="12" cy="12" r="6.5" stroke={stroke} strokeWidth={sw - 0.5} fill="none" /><path d="M12 8.5 L12 12 L14.5 13.5" stroke={stroke} strokeWidth={sw - 0.5} fill="none" strokeLinecap="round" strokeLinejoin="round" /></>;
+        default:
+          return null;
+      }
+    };
     return (
       <span style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
+        display: "inline-block",
         width: 16, height: 16,
-        background: s.bg, color: s.fg, borderRadius: 3,
+        background: s.bg,
+        borderRadius: 3,
         border: `1px solid ${s.bd}`,
-        fontSize: late ? 10 : 12,
-        fontWeight: 900,
-        fontFamily: "-apple-system, 'PingFang TC', 'Microsoft JhengHei', sans-serif",
         boxSizing: "border-box",
-        lineHeight: 1,
         verticalAlign: "middle",
-      }}>{s.t}</span>
+        lineHeight: 0,
+      }}>
+        <svg viewBox="0 0 24 24" width="14" height="14" xmlns="http://www.w3.org/2000/svg"
+             style={{ display: "block", margin: "0 auto" }}>
+          {renderShape()}
+        </svg>
+      </span>
     );
   };
 
