@@ -4639,21 +4639,15 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
       }
     };
     return (
-      <span style={{
-        display: "inline-block",
-        width: 16, height: 16,
-        background: s.bg,
-        borderRadius: 3,
-        border: `1px solid ${s.bd}`,
-        boxSizing: "border-box",
-        verticalAlign: "middle",
-        lineHeight: 0,
-      }}>
-        <svg viewBox="0 0 24 24" width="14" height="14" xmlns="http://www.w3.org/2000/svg"
-             style={{ display: "block", margin: "0 auto" }}>
-          {renderShape()}
-        </svg>
-      </span>
+      <svg viewBox="0 0 24 24" width="16" height="16" xmlns="http://www.w3.org/2000/svg"
+           style={{ display: "block", verticalAlign: "middle" }}>
+        <rect x="0" y="0" width="24" height="24" rx="5" fill={s.bg} />
+        {s.bd !== "transparent" && (
+          <rect x="1" y="1" width="22" height="22" rx="4" fill="none"
+                stroke={s.bd} strokeWidth="1.5" />
+        )}
+        {renderShape()}
+      </svg>
     );
   };
 
