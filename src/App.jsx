@@ -59,11 +59,28 @@ const useRoster = () => useContext(RosterContext);
 // 找特定 seq 的 person（用於 audit log 紀錄人名）
 const ROSTER_lookup = (roster, seq) => roster.find(p => p.seq === seq);
 
-// 把成績選手名字依照點名 roster 的順序排序
-// roster 內的名字 → 照 seq 排；roster 沒有的名字 → 排在後面（保持原順序）
+// ============ 顯示排序 ============
+// 顯示順序一律：年級（九→八→七）→ 班級（小→大）→ 座號（小→大）
+// seq 只當「資料 key」（出席紀錄都用 seq 對應），永遠不重編、不顯示；
+// 畫面上看到的編號是排序後的列序（1, 2, 3…），刪人後自動連續、新增自動歸位。
+const personCompare = (a, b) => {
+  const ga = Number(a.grade) || 0, gb = Number(b.grade) || 0;
+  if (gb !== ga) return gb - ga;                    // 年級大的在前（九→八→七）
+  const ca = Number(a.cls) || 0, cb = Number(b.cls) || 0;
+  if (ca && cb && ca !== cb) return ca - cb;        // 班級小的在前
+  if (!!ca !== !!cb) return ca ? -1 : 1;            // 還沒填班級的排該年級最後
+  const na = Number(a.num) || 0, nb = Number(b.num) || 0;
+  if (na && nb && na !== nb) return na - nb;        // 座號小的在前
+  if (!!na !== !!nb) return na ? -1 : 1;
+  return (Number(a.seq) || 0) - (Number(b.seq) || 0); // 保底照 seq
+};
+const sortRoster = (roster) => [...(roster || [])].sort(personCompare);
+
+// 把成績選手名字依照點名 roster 的顯示順序排序
+// roster 內的名字 → 照 年級→班級→座號 排；roster 沒有的名字 → 排在後面（保持原順序）
 const sortSwimmerNames = (names, roster) => {
   const orderMap = {};
-  (roster || []).forEach((p, idx) => { orderMap[p.name] = idx; });
+  sortRoster(roster).forEach((p, idx) => { orderMap[p.name] = idx; });
   return [...names].sort((a, b) => {
     const ia = orderMap[a];
     const ib = orderMap[b];
@@ -1047,7 +1064,7 @@ function AttendanceApp({ user }) {
   const TRAINING_DAYS = useMemo(() => MONTH_DAYS.filter(x => !x.info.off), [MONTH_DAYS]);
   const [period, setPeriod] = useState("am");
   const [attendance, setAttendanceLocal] = useState({});
-  const [roster, setRosterLocal] = useState(DEFAULT_ROSTER);
+  const [roster, setRosterLocal] = useState(() => sortRoster(DEFAULT_ROSTER));
   const [config, setConfigLocal] = useState({ admins: [] });
   const [configLoaded, setConfigLoaded] = useState(false);
   const [screenshotMode, setScreenshotMode] = useState(false);
@@ -1083,7 +1100,7 @@ function AttendanceApp({ user }) {
       ref,
       (snap) => {
         if (snap.exists() && Array.isArray(snap.data().value)) {
-          setRosterLocal(snap.data().value);
+          setRosterLocal(sortRoster(snap.data().value));
         }
       },
       (err) => console.error("Roster listen error:", err)
@@ -1216,7 +1233,7 @@ function AttendanceApp({ user }) {
 
   const setRoster = (updater, opts = {}) => {
     setRosterLocal((prev) => {
-      const next = typeof updater === "function" ? updater(prev) : updater;
+      const next = sortRoster(typeof updater === "function" ? updater(prev) : updater);
       setSyncStatus("saving");
       const ref = doc(db, "teams", "longmen", "data", "roster");
       setDoc(ref, {
@@ -1285,8 +1302,8 @@ function AttendanceApp({ user }) {
     const wb = XLSX.utils.book_new();
 
     // ========== Sheet 1: 個人匯總 ==========
-    // 按序號排序（依名冊順序，方便家長/教練查找）
-    const personData = [...roster].sort((a, b) => a.seq - b.seq).map(p => {
+    // 依顯示順序排序（年級→班級→座號，方便家長/教練查找）
+    const personData = sortRoster(roster).map((p, pIdx) => {
       let scheduled = 0, present = 0, absent = 0, pending = 0, late = 0, bonus = 0;
       let yyAm = 0, yyPm = 0;
       let soloAm = 0, soloPm = 0;  // 個練計數
@@ -1356,7 +1373,7 @@ function AttendanceApp({ user }) {
       const soloTotal = soloAm + soloPm;
       const yyFee = yyPaid * VENUE_FEE;
       return {
-        "序號": p.seq,
+        "序號": pIdx + 1,
         "班級": p.cls,
         "座號": p.num,
         "姓名": p.name,
@@ -1408,8 +1425,8 @@ function AttendanceApp({ user }) {
     XLSX.utils.book_append_sheet(wb, ws1, "個人匯總");
 
     // ========== Sheet 2: 場次彙整 ==========
-    // 在每場次內，隊員按序號排序
-    const sortedRoster = [...roster].sort((a, b) => a.seq - b.seq);
+    // 在每場次內，隊員按顯示順序排序
+    const sortedRoster = sortRoster(roster);
     const sessionData = [];
     TRAINING_DAYS.forEach(day => {
       const dayData = attendance[day.dateStr] || {};
@@ -1505,7 +1522,7 @@ function AttendanceApp({ user }) {
         const soloSlot = dayData[per === "am" ? "am_solo" : "pm_solo"] || {};
         const venue = getVenue(attendance, day.dateStr, per);
         const isYy = venue === "yongyun";
-        sortedRoster.forEach(p => {
+        sortedRoster.forEach((p, pIdx) => {
           const sch = getSch(attendance, day.dateStr, p, idx);
           const ac = slot[p.seq];
           const isLate = !!lateSlot[p.seq];
@@ -1520,7 +1537,7 @@ function AttendanceApp({ user }) {
             "星期": day.info.dayLabel,
             "時段": per === "am" ? "早訓" : "午訓",
             "場地": VENUES[venue].label,
-            "序號": p.seq,
+            "序號": pIdx + 1,
             "班級": p.cls,
             "座號": p.num,
             "姓名": p.name,
@@ -2294,7 +2311,7 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
   const dayAnyPmSolo = attendance[selectedDate]?.pm_solo || {};
   const dayNote = attendance[selectedDate]?.notes || "";
 
-  const rows = useMemo(() => roster.map(p => {
+  const rows = useMemo(() => roster.map((p, i) => {
     const scheduled = getSch(attendance, selectedDate, p, sessionIdx);
     const actual = sessionAtt[p.seq] || null;
     const late = !!sessionLate[p.seq];
@@ -2308,7 +2325,7 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
     else if (!scheduled && actual === "present") status = "bonus";
     else if (!scheduled && actual === "absent") status = "confirmed_excused";
     else if (scheduled && !actual) status = "pending";
-    return { ...p, scheduled, actual, status, late, solo, dayHasSolo, note };
+    return { ...p, no: i + 1, scheduled, actual, status, late, solo, dayHasSolo, note };
   }), [sessionIdx, sessionAtt, sessionLate, sessionNotes, sessionSolo, dayAnyAmSolo, dayAnyPmSolo, roster]);
 
   const stats = useMemo(() => ({
@@ -2552,7 +2569,7 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
       [`場地：${venueLabel}${fee > 0 ? ` (每人 $${fee})` : ""}`].join(","),
       ["序號", "班級", "座號", "姓名", "年級", "表定", "實際", "遲到", "備註"].join(","),
       ...rows.map(r => [
-        r.seq, r.cls, r.num, r.name, GRADE_NAMES[r.grade],
+        r.no ?? r.seq, r.cls, r.num, r.name, GRADE_NAMES[r.grade],
         r.scheduled ? "出席" : "不出席",
         r.actual === "present" ? "出席" : r.actual === "absent" ? "未到" : "未點名",
         r.late ? "是" : "",
@@ -2959,7 +2976,7 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
             {rows.filter(r => r.status === "no_show").map(r => (
               <span key={r.seq} className="px-2.5 py-1 rounded-md text-sm flex items-center gap-1.5"
                     style={{ background: "var(--red)", color: "#fff" }}>
-                <span className="num text-xs opacity-70">{pad(r.seq)}</span>
+                <span className="num text-xs opacity-70">{pad(r.no ?? r.seq)}</span>
                 {r.name}
                 <span className="num text-xs opacity-70">{r.cls}-{r.num}</span>
               </span>
@@ -3027,7 +3044,7 @@ function CallRow({ m, mark, markLate, markSolo, setPersonNote, isYongyun, isAdmi
          style={{ background: bg, borderColor: bd, opacity: dim, transition: "all 0.2s" }}>
       <div className="flex items-center gap-2 sm:gap-3">
         <div className="num text-[11px] sm:text-xs tabular-nums shrink-0"
-             style={{ color: "var(--mute)", minWidth: "22px" }}>{pad(m.seq)}</div>
+             style={{ color: "var(--mute)", minWidth: "22px" }}>{pad(m.no ?? m.seq)}</div>
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2 flex-wrap">
             <span className="text-base sm:text-lg font-medium truncate" style={{ color: "var(--ink)" }}>{m.name}</span>
@@ -3255,13 +3272,13 @@ function DailyView({ selectedDate, setSelectedDate, attendance, setTab, setPerio
   const pmNotes = attendance[selectedDate]?.pm_notes || {};
   const dayNote = attendance[selectedDate]?.notes || "";
 
-  const rows = roster.map(p => {
+  const rows = roster.map((p, i) => {
     const amSch = getSch(attendance, selectedDate, p, dateInfo.amIdx);
     const pmSch = getSch(attendance, selectedDate, p, dateInfo.pmIdx);
     const amStatus = computeStatus(amSch, amAtt[p.seq]);
     const pmStatus = computeStatus(pmSch, pmAtt[p.seq]);
     return {
-      ...p, amSch, pmSch, amStatus, pmStatus,
+      ...p, no: i + 1, amSch, pmSch, amStatus, pmStatus,
       amActual: amAtt[p.seq], pmActual: pmAtt[p.seq],
       amLate: !!amLate[p.seq], pmLate: !!pmLate[p.seq],
       amNote: amNotes[p.seq] || "", pmNote: pmNotes[p.seq] || "",
@@ -3297,7 +3314,7 @@ function DailyView({ selectedDate, setSelectedDate, attendance, setTab, setPerio
       if (amV === "yongyun" && (r.amActual === "present")) dayFee += VENUE_FEE;
       if (pmV === "yongyun" && (r.pmActual === "present")) dayFee += VENUE_FEE;
       lines.push([
-        r.seq, r.cls, r.num, r.name, GRADE_NAMES[r.grade],
+        r.no ?? r.seq, r.cls, r.num, r.name, GRADE_NAMES[r.grade],
         r.amSch ? "出席" : "不出席",
         r.amActual === "present" ? "出席" : r.amActual === "absent" ? "未到" : "未點名",
         r.amLate ? "是" : "",
@@ -3622,7 +3639,7 @@ function DailyRow({ m }) {
              background: "var(--panel)",
            }}>
         <span className="num text-[11px] sm:text-xs tabular-nums" style={{ color: "var(--mute)" }}>
-          {pad(m.seq)}
+          {pad(m.no ?? m.seq)}
         </span>
         <div className="min-w-0">
           <div className="text-sm sm:text-base font-medium truncate" style={{ color: "var(--ink)" }}>
@@ -3667,7 +3684,7 @@ function DailyRow({ m }) {
 // ============ MONTHLY VIEW ============
 function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS, isAdmin }) {
   const { roster } = useRoster();
-  const personStats = useMemo(() => roster.map(p => {
+  const personStats = useMemo(() => roster.map((p, i) => {
     let scheduled = 0, present = 0, absent = 0, bonus = 0, pending = 0, late = 0;
     let yyAm = 0, yyPm = 0; // 永運場次出席（早/午）
     let soloAm = 0, soloPm = 0; // 個練場次（早/午）
@@ -3743,7 +3760,7 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS,
     const soloTotal = soloAm + soloPm;
     const yyFee = yyPaid * VENUE_FEE;
     return {
-      ...p, scheduled, present, absent, bonus, pending, late, rate, matrix,
+      ...p, no: i + 1, scheduled, present, absent, bonus, pending, late, rate, matrix,
       yyAm, yyPm, yyTotal, yyFee,
       soloAm, soloPm, soloTotal,
       yyAmPaid, yyPmPaid, yyPaid,
@@ -3786,7 +3803,7 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS,
     if (sortBy === "rate") arr.sort((a, b) => b.rate - a.rate);
     else if (sortBy === "absent") arr.sort((a, b) => b.absent - a.absent);
     else if (sortBy === "present") arr.sort((a, b) => b.present - a.present);
-    else arr.sort((a, b) => a.seq - b.seq);
+    else arr.sort(personCompare);
     return arr;
   }, [personStats, sortBy]);
 
@@ -3937,11 +3954,11 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
   // 應收名單：有應收費用的人（排除整月都個練的人）
   // 應收清單：所有隊員都列出（依名冊順序），沒永運費的顯示 0
   const paidList = useMemo(() =>
-    [...personStats].sort((a, b) => a.seq - b.seq),
+    [...personStats].sort(personCompare),
     [personStats]);
   // 個練名單：有個練場次的人（這個保持只列有的）
   const soloList = useMemo(() =>
-    [...personStats].filter(s => s.soloTotal > 0).sort((a, b) => a.seq - b.seq),
+    [...personStats].filter(s => s.soloTotal > 0).sort(personCompare),
     [personStats]);
 
   const exportFee = () => {
@@ -3968,9 +3985,9 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
     });
 
     // 為每個人 × 每個場次計算狀態
-    const list = paidList.map(s => {
+    const list = paidList.map((s, sIdx) => {
       const row = {
-        "序號": s.seq,
+        "序號": sIdx + 1,
         "班級": s.cls,
         "座號": s.num,
         "姓名": s.name,
@@ -4042,7 +4059,7 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
     // ========== Sheet 2: 個練名單（不計費） ==========
     if (soloList.length > 0) {
       const list2 = soloList.map(s => ({
-        "序號": s.seq,
+        "序號": s.no ?? s.seq,
         "班級": s.cls,
         "座號": s.num,
         "姓名": s.name,
@@ -4187,7 +4204,7 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
                            transition: "background 0.15s",
                          }}>
                       <span className="num text-[11px]" style={{ color: VENUES.yongyun.color, opacity: 0.7 }}>
-                        {pad(s.seq)}
+                        {pad(s.no ?? s.seq)}
                       </span>
                       <div className="min-w-0 flex items-center gap-1">
                         {!noFee && (
@@ -4320,7 +4337,7 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
                        background: "rgba(124, 77, 188, 0.04)",
                      }}>
                   <span className="num text-[11px]" style={{ color: "#7C4DBC", opacity: 0.7 }}>
-                    {pad(s.seq)}
+                    {pad(s.no ?? s.seq)}
                   </span>
                   <div className="min-w-0">
                     <div className="font-medium truncate" style={{ color: "var(--ink)" }}>{s.name}</div>
@@ -4420,7 +4437,7 @@ function PersonMonthRow({ s, onCellClick }) {
     <div className="rounded-xl p-3 sm:p-4 border"
          style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
       <div className="flex items-baseline gap-2 mb-2 flex-wrap">
-        <span className="num text-[11px]" style={{ color: "var(--mute)" }}>{pad(s.seq)}</span>
+        <span className="num text-[11px]" style={{ color: "var(--mute)" }}>{pad(s.no ?? s.seq)}</span>
         <span className="text-base sm:text-lg font-medium" style={{ color: "var(--ink)" }}>{s.name}</span>
         <span className="num text-[10px] sm:text-xs" style={{ color: "var(--mute)" }}>
           {s.cls}-{pad(s.num)} · {GRADE_NAMES[s.grade]}
@@ -4539,12 +4556,12 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
     if (sch && !actual) return "pending";
     return "pending_excused";
   };
-  const rows = roster.map(p => {
+  const rows = roster.map((p, i) => {
     const amSch = getSch(attendance, selectedDate, p, dateInfo.amIdx);
     const pmSch = getSch(attendance, selectedDate, p, dateInfo.pmIdx);
     const dayHasSolo = !!(amSolo[p.seq] || pmSolo[p.seq]);
     return {
-      ...p, amSch, pmSch,
+      ...p, no: i + 1, amSch, pmSch,
       amStatus: computeStatus(amSch, amAtt[p.seq]),
       pmStatus: computeStatus(pmSch, pmAtt[p.seq]),
       amLate: !!amLate[p.seq],
@@ -4639,15 +4656,21 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
       }
     };
     return (
-      <svg viewBox="0 0 24 24" width="16" height="16" xmlns="http://www.w3.org/2000/svg"
-           style={{ display: "block", verticalAlign: "middle" }}>
-        <rect x="0" y="0" width="24" height="24" rx="5" fill={s.bg} />
-        {s.bd !== "transparent" && (
-          <rect x="1" y="1" width="22" height="22" rx="4" fill="none"
-                stroke={s.bd} strokeWidth="1.5" />
-        )}
-        {renderShape()}
-      </svg>
+      <span style={{
+        display: "inline-block",
+        width: 16, height: 16,
+        background: s.bg,
+        borderRadius: 3,
+        border: `1px solid ${s.bd}`,
+        boxSizing: "border-box",
+        verticalAlign: "middle",
+        lineHeight: 0,
+      }}>
+        <svg viewBox="0 0 24 24" width="14" height="14" xmlns="http://www.w3.org/2000/svg"
+             style={{ display: "block", margin: "0 auto" }}>
+          {renderShape()}
+        </svg>
+      </span>
     );
   };
 
@@ -4687,7 +4710,7 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
         boxShadow: hasLate && !hasNoShow ? "inset 3px 0 0 #E07B30" : "none",
       }}>
         <span style={{ background: gradeBar(m.grade), height: 10, borderRadius: 1 }} />
-        <span className="num" style={{ fontSize: 9, color: "#8B8275" }}>{pad(m.seq)}</span>
+        <span className="num" style={{ fontSize: 9, color: "#8B8275" }}>{pad(m.no ?? m.seq)}</span>
         <span style={{
           fontSize: 12, fontWeight: hasNoShow ? 700 : 500,
           color: hasNoShow ? "#7A1F0F" : "#141210",
@@ -5722,15 +5745,18 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
   }
 
   // CASE 3: Admin → full edit
-  const sortedRoster = [...roster].sort((a, b) => a.seq - b.seq);
+  const sortedRoster = sortRoster(roster);
+  // 顯示序號（列序）：seq → 1, 2, 3…（seq 只當資料 key，不再顯示）
+  const dnOf = {};
+  sortedRoster.forEach((p, i) => { dnOf[p.seq] = i + 1; });
 
   // ===== 匯出隊員名單 =====
   const exportRoster = () => {
     const wb = XLSX.utils.book_new();
 
     // ========== Sheet 1: 基本資料 ==========
-    const basicData = sortedRoster.map(p => ({
-      "序號": p.seq,
+    const basicData = sortedRoster.map((p, i) => ({
+      "序號": i + 1,
       "班級": p.cls,
       "座號": p.num,
       "姓名": p.name,
@@ -5743,8 +5769,8 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
     XLSX.utils.book_append_sheet(wb, ws1, "基本資料");
 
     // ========== Sheet 2: 訓練表（每場勾選） ==========
-    const schData = sortedRoster.map(p => ({
-      "序號": p.seq,
+    const schData = sortedRoster.map((p, i) => ({
+      "序號": i + 1,
       "班級": p.cls,
       "座號": p.num,
       "姓名": p.name,
@@ -5774,7 +5800,7 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
 
     // ========== Sheet 3: 訓練表（簡潔版） ==========
     const dayLabels = ["一", "二", "三", "四", "五", "六"];
-    const schSimpleData = sortedRoster.map(p => {
+    const schSimpleData = sortedRoster.map((p, i) => {
       const amDays = [];
       const pmDays = [];
       for (let i = 0; i < 6; i++) {
@@ -5782,7 +5808,7 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
         if (p.sch[i * 2 + 1] === 1) pmDays.push(dayLabels[i]);
       }
       return {
-        "序號": p.seq,
+        "序號": i + 1,
         "班級": p.cls,
         "座號": p.num,
         "姓名": p.name,
@@ -5808,7 +5834,7 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
       list.forEach(p => {
         gradeData.push({
           "年級": GRADE_NAMES[g],
-          "序號": p.seq,
+          "序號": dnOf[p.seq] ?? p.seq,
           "班級": p.cls,
           "座號": p.num,
           "姓名": p.name,
@@ -5896,7 +5922,7 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
     const exists = roster.find(p => p.seq === person.seq);
     let newSeq = person.seq;
     if (exists) {
-      newSeq = Math.max(...roster.map(p => p.seq), 0) + 1;
+      newSeq = [...roster, ...(deletedPersons || [])].reduce((m, p) => Math.max(m, Number(p.seq) || 0), 0) + 1;
     }
     const restored = { ...person, seq: newSeq };
     delete restored.deletedAt;
@@ -5927,7 +5953,8 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
   };
 
   const addPerson = (newP) => {
-    const maxSeq = roster.reduce((m, p) => Math.max(m, p.seq), 0);
+    // seq 是出席資料的 key：連同已軟刪除的人一起取最大值，確保舊編號永不重複使用
+    const maxSeq = [...roster, ...(deletedPersons || [])].reduce((m, p) => Math.max(m, Number(p.seq) || 0), 0);
     const newPerson = { ...newP, seq: maxSeq + 1 };
     setRoster(prev => [...prev, newPerson], {
       logAction: "add_person",
@@ -6064,7 +6091,7 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
           </div>
           <div className="space-y-2">
             {g.members.map(m => (
-              <ManagementRow key={m.seq} m={m}
+              <ManagementRow key={m.seq} m={m} no={dnOf[m.seq]}
                              onEditInfo={() => setEditingPerson(m)}
                              onEditSch={() => setEditingSch(m)}
                              onDelete={() => setConfirmDelete(m)} />
@@ -6169,9 +6196,13 @@ function BootstrapAdminPrompt({ user, setConfig, logAction }) {
 }
 
 function ReadOnlyManagement({ roster, ownerEmail, adminEmails, userEmail }) {
+  const sortedRoster = sortRoster(roster);
+  // 顯示序號（列序）：seq → 1, 2, 3…
+  const dnOf = {};
+  sortedRoster.forEach((p, i) => { dnOf[p.seq] = i + 1; });
   const grouped = [9, 8, 7].map(g => ({
     grade: g, label: GRADE_NAMES[g],
-    members: roster.filter(p => p.grade === g).sort((a, b) => a.seq - b.seq),
+    members: sortedRoster.filter(p => p.grade === g),
   })).filter(g => g.members.length > 0);
 
   return (
@@ -6200,7 +6231,7 @@ function ReadOnlyManagement({ roster, ownerEmail, adminEmails, userEmail }) {
               <div key={m.seq} className="flex items-center gap-3 px-3 py-2 rounded-lg border"
                    style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
                 <span className="num text-xs" style={{ color: "var(--mute)", minWidth: 22 }}>
-                  {pad(m.seq)}
+                  {pad(dnOf[m.seq] ?? m.seq)}
                 </span>
                 <span className="text-sm font-medium flex-1" style={{ color: "var(--ink)" }}>{m.name}</span>
                 <span className="num text-[10px]" style={{ color: "var(--mute)" }}>
@@ -6788,7 +6819,7 @@ function AdminListSection({ user, config, setConfig, isOwner, logAction }) {
   );
 }
 
-function ManagementRow({ m, onEditInfo, onEditSch, onDelete }) {
+function ManagementRow({ m, no, onEditInfo, onEditSch, onDelete }) {
   const schDays = ["一","二","三","四","五","六"];
   const sessionCount = m.sch.filter(x => x === 1).length;
   return (
@@ -6797,7 +6828,7 @@ function ManagementRow({ m, onEditInfo, onEditSch, onDelete }) {
       <div className="flex items-center gap-3 flex-wrap">
         <span className="num text-xs tabular-nums shrink-0"
               style={{ color: "var(--mute)", minWidth: "26px" }}>
-          {pad(m.seq)}
+          {pad(no ?? m.seq)}
         </span>
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2 flex-wrap">
