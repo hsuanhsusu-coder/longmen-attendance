@@ -15,39 +15,39 @@ import {
 const DAYS = ["週一", "週二", "週三", "週四", "週五", "週六"];
 
 const DEFAULT_ROSTER = [
-  { seq: 1, cls: 0, num: 0, name: "選手01", grade: 9, sch: [1,1,1,1,0,0,1,1,0,0,0,1] },
-  { seq: 2, cls: 0, num: 0, name: "選手02", grade: 9, sch: [1,1,0,0,0,0,1,1,0,0,0,0] },
-  { seq: 3, cls: 0, num: 0, name: "選手03", grade: 9, sch: [1,1,0,0,1,1,0,0,0,0,0,0] },
-  { seq: 4, cls: 0, num: 0, name: "選手04", grade: 9, sch: [0,0,0,0,1,1,0,0,1,1,0,1] },
-  { seq: 5, cls: 0, num: 0, name: "選手05", grade: 9, sch: [1,1,0,0,0,0,1,1,0,0,0,1] },
-  { seq: 6, cls: 0, num: 0, name: "選手06", grade: 8, sch: [1,1,0,0,1,1,0,0,1,1,0,0] },
-  { seq: 7, cls: 0, num: 0, name: "選手07", grade: 8, sch: [1,1,0,0,1,1,0,0,1,1,0,0] },
-  { seq: 8, cls: 0, num: 0, name: "選手08", grade: 8, sch: [1,0,0,0,1,1,0,0,1,1,0,0] },
-  { seq: 9, cls: 0, num: 0, name: "選手09", grade: 8, sch: [1,1,0,0,1,1,0,0,0,0,0,0] },
-  { seq: 10, cls: 0, num: 0, name: "選手10", grade: 8, sch: [1,1,0,0,1,1,0,0,0,0,0,0] },
-  { seq: 11, cls: 0, num: 0, name: "選手11", grade: 8, sch: [1,1,0,0,1,1,0,0,0,0,0,0] },
-  { seq: 12, cls: 0, num: 0, name: "選手12", grade: 8, sch: [1,1,0,0,1,1,0,0,1,1,0,0] },
-  { seq: 13, cls: 0, num: 0, name: "選手13", grade: 8, sch: [1,1,0,0,1,1,0,0,1,1,0,0] },
-  { seq: 14, cls: 0, num: 0, name: "選手14", grade: 8, sch: [1,1,0,0,1,1,0,0,1,1,0,0] },
-  { seq: 15, cls: 0, num: 0, name: "選手15", grade: 8, sch: [1,1,0,0,1,1,0,0,1,1,0,0] },
-  { seq: 16, cls: 0, num: 0, name: "選手16", grade: 7, sch: [1,1,1,1,1,1,1,1,0,0,1,0] },
-  { seq: 17, cls: 0, num: 0, name: "選手17", grade: 7, sch: [1,1,1,1,1,1,1,1,1,1,1,0] },
-  { seq: 18, cls: 0, num: 0, name: "選手18", grade: 7, sch: [1,1,1,1,1,1,1,1,1,1,0,0] },
-  { seq: 19, cls: 0, num: 0, name: "選手19", grade: 7, sch: [1,1,1,1,1,1,1,1,0,0,0,0] },
-  { seq: 20, cls: 0, num: 0, name: "選手20", grade: 7, sch: [1,1,1,1,1,1,1,1,1,1,0,0] },
-  { seq: 21, cls: 0, num: 0, name: "選手21", grade: 7, sch: [1,1,0,0,1,1,0,0,1,1,0,0] },
-  { seq: 22, cls: 0, num: 0, name: "選手22", grade: 7, sch: [1,1,1,1,1,1,1,1,1,1,0,1] },
-  { seq: 23, cls: 0, num: 0, name: "選手23", grade: 7, sch: [1,1,1,1,1,1,1,1,1,1,1,1] },
-  { seq: 24, cls: 0, num: 0, name: "選手24", grade: 7, sch: [1,1,1,1,1,1,1,1,1,1,1,1] },
-  { seq: 25, cls: 0, num: 0, name: "選手25", grade: 7, sch: [1,1,0,0,1,1,1,1,0,0,1,0] },
-  { seq: 26, cls: 0, num: 0, name: "選手26", grade: 7, sch: [1,1,1,1,1,1,1,1,1,1,0,0] },
-  { seq: 27, cls: 0, num: 0, name: "選手27", grade: 7, sch: [1,1,0,0,1,1,1,1,0,0,0,0] },
-  { seq: 28, cls: 0, num: 0, name: "選手28", grade: 7, sch: [1,1,1,1,1,1,1,1,1,1,0,0] },
-  { seq: 29, cls: 0, num: 0, name: "選手29", grade: 7, sch: [1,1,1,1,1,1,1,1,1,1,0,0] },
-  { seq: 30, cls: 0, num: 0, name: "選手30", grade: 7, sch: [1,1,1,1,1,1,1,1,0,0,1,1] },
-  { seq: 31, cls: 0, num: 0, name: "選手31", grade: 7, sch: [1,1,0,0,1,1,1,1,1,1,0,0] },
-  { seq: 32, cls: 0, num: 0, name: "選手32", grade: 7, sch: [1,1,1,1,1,1,1,1,1,1,0,1] },
-  { seq: 33, cls: 0, num: 0, name: "選手33", grade: 7, sch: [1,1,1,1,1,1,1,1,0,0,1,1] },
+  { seq: 1,  cls: 904, num: 8,  name: "金采儀", grade: 9, sch: [1,1,1,1,0,0,1,1,0,0,0,1] },
+  { seq: 2,  cls: 905, num: 23, name: "唐家寶", grade: 9, sch: [1,1,0,0,0,0,1,1,0,0,0,0] },
+  { seq: 3,  cls: 906, num: 25, name: "呂誠",   grade: 9, sch: [1,1,0,0,1,1,0,0,0,0,0,0] },
+  { seq: 4,  cls: 908, num: 33, name: "楊宥樂", grade: 9, sch: [0,0,0,0,1,1,0,0,1,1,0,1] },
+  { seq: 5,  cls: 913, num: 26, name: "洪禮揚", grade: 9, sch: [1,1,0,0,0,0,1,1,0,0,0,1] },
+  { seq: 6,  cls: 802, num: 11, name: "楊霈妮", grade: 8, sch: [1,1,0,0,1,1,0,0,1,1,0,0] },
+  { seq: 7,  cls: 803, num: 23, name: "呂紹宇", grade: 8, sch: [1,1,0,0,1,1,0,0,1,1,0,0] },
+  { seq: 8,  cls: 804, num: 16, name: "蔡萭潼", grade: 8, sch: [1,0,0,0,1,1,0,0,1,1,0,0] },
+  { seq: 9,  cls: 810, num: 35, name: "鄭宇廷", grade: 8, sch: [1,1,0,0,1,1,0,0,0,0,0,0] },
+  { seq: 10, cls: 812, num: 31, name: "楊立傳", grade: 8, sch: [1,1,0,0,1,1,0,0,0,0,0,0] },
+  { seq: 11, cls: 812, num: 32, name: "楊立楷", grade: 8, sch: [1,1,0,0,1,1,0,0,0,0,0,0] },
+  { seq: 12, cls: 813, num: 2,  name: "王曉霏", grade: 8, sch: [1,1,0,0,1,1,0,0,1,1,0,0] },
+  { seq: 13, cls: 813, num: 21, name: "李晨睿", grade: 8, sch: [1,1,0,0,1,1,0,0,1,1,0,0] },
+  { seq: 14, cls: 815, num: 26, name: "林泳廷", grade: 8, sch: [1,1,0,0,1,1,0,0,1,1,0,0] },
+  { seq: 15, cls: 816, num: 1,  name: "蔡進樺", grade: 8, sch: [1,1,0,0,1,1,0,0,1,1,0,0] },
+  { seq: 16, cls: 701, num: 24, name: "林子堯", grade: 7, sch: [1,1,1,1,1,1,1,1,0,0,1,0] },
+  { seq: 17, cls: 702, num: 7,  name: "和怡霈", grade: 7, sch: [1,1,1,1,1,1,1,1,1,1,1,0] },
+  { seq: 18, cls: 703, num: 12, name: "曾澄",   grade: 7, sch: [1,1,1,1,1,1,1,1,1,1,0,0] },
+  { seq: 19, cls: 703, num: 22, name: "吳定宇", grade: 7, sch: [1,1,1,1,1,1,1,1,0,0,0,0] },
+  { seq: 20, cls: 703, num: 33, name: "楊杰栩", grade: 7, sch: [1,1,1,1,1,1,1,1,1,1,0,0] },
+  { seq: 21, cls: 703, num: 37, name: "蘇柏宇", grade: 7, sch: [1,1,0,0,1,1,0,0,1,1,0,0] },
+  { seq: 22, cls: 706, num: 28, name: "陳羿愷", grade: 7, sch: [1,1,1,1,1,1,1,1,1,1,0,1] },
+  { seq: 23, cls: 709, num: 4,  name: "朱秭儀", grade: 7, sch: [1,1,1,1,1,1,1,1,1,1,1,1] },
+  { seq: 24, cls: 710, num: 3,  name: "周懿",   grade: 7, sch: [1,1,1,1,1,1,1,1,1,1,1,1] },
+  { seq: 25, cls: 710, num: 5,  name: "柯柔瑄", grade: 7, sch: [1,1,0,0,1,1,1,1,0,0,1,0] },
+  { seq: 26, cls: 710, num: 22, name: "何浩霆", grade: 7, sch: [1,1,1,1,1,1,1,1,1,1,0,0] },
+  { seq: 27, cls: 710, num: 35, name: "鄭咏承", grade: 7, sch: [1,1,0,0,1,1,1,1,0,0,0,0] },
+  { seq: 28, cls: 711, num: 10, name: "陳柏方", grade: 7, sch: [1,1,1,1,1,1,1,1,1,1,0,0] },
+  { seq: 29, cls: 713, num: 12, name: "楊詠昕", grade: 7, sch: [1,1,1,1,1,1,1,1,1,1,0,0] },
+  { seq: 30, cls: 714, num: 36, name: "謝東君", grade: 7, sch: [1,1,1,1,1,1,1,1,0,0,1,1] },
+  { seq: 31, cls: 715, num: 2,  name: "何昕語", grade: 7, sch: [1,1,0,0,1,1,1,1,1,1,0,0] },
+  { seq: 32, cls: 715, num: 14, name: "鄭郁馨", grade: 7, sch: [1,1,1,1,1,1,1,1,1,1,0,1] },
+  { seq: 33, cls: 716, num: 23, name: "呂訢",   grade: 7, sch: [1,1,1,1,1,1,1,1,0,0,1,1] },
 ];
 
 const GRADE_NAMES = { 9: "九年級", 8: "八年級", 7: "七年級" };
@@ -59,28 +59,11 @@ const useRoster = () => useContext(RosterContext);
 // 找特定 seq 的 person（用於 audit log 紀錄人名）
 const ROSTER_lookup = (roster, seq) => roster.find(p => p.seq === seq);
 
-// ============ 顯示排序 ============
-// 顯示順序一律：年級（九→八→七）→ 班級（小→大）→ 座號（小→大）
-// seq 只當「資料 key」（出席紀錄都用 seq 對應），永遠不重編、不顯示；
-// 畫面上看到的編號是排序後的列序（1, 2, 3…），刪人後自動連續、新增自動歸位。
-const personCompare = (a, b) => {
-  const ga = Number(a.grade) || 0, gb = Number(b.grade) || 0;
-  if (gb !== ga) return gb - ga;                    // 年級大的在前（九→八→七）
-  const ca = Number(a.cls) || 0, cb = Number(b.cls) || 0;
-  if (ca && cb && ca !== cb) return ca - cb;        // 班級小的在前
-  if (!!ca !== !!cb) return ca ? -1 : 1;            // 還沒填班級的排該年級最後
-  const na = Number(a.num) || 0, nb = Number(b.num) || 0;
-  if (na && nb && na !== nb) return na - nb;        // 座號小的在前
-  if (!!na !== !!nb) return na ? -1 : 1;
-  return (Number(a.seq) || 0) - (Number(b.seq) || 0); // 保底照 seq
-};
-const sortRoster = (roster) => [...(roster || [])].sort(personCompare);
-
-// 把成績選手名字依照點名 roster 的顯示順序排序
-// roster 內的名字 → 照 年級→班級→座號 排；roster 沒有的名字 → 排在後面（保持原順序）
+// 把成績選手名字依照點名 roster 的順序排序
+// roster 內的名字 → 照 seq 排；roster 沒有的名字 → 排在後面（保持原順序）
 const sortSwimmerNames = (names, roster) => {
   const orderMap = {};
-  sortRoster(roster).forEach((p, idx) => { orderMap[p.name] = idx; });
+  (roster || []).forEach((p, idx) => { orderMap[p.name] = idx; });
   return [...names].sort((a, b) => {
     const ia = orderMap[a];
     const ib = orderMap[b];
@@ -935,6 +918,20 @@ const monthFromDate = (dateStr) => {
   return { Y, M: m - 1 };
 };
 
+// 歷史名單合併：看某年某月的統計時,把「該月還在隊上、之後才畢業/刪除」的人納入
+// 判斷：deletedAt 在該月最後一天之後 = 該月整月在隊 → 納入
+// （M 為 0-indexed）
+const withGraduated = (roster, deletedPersons, Y, M) => {
+  if (!deletedPersons || deletedPersons.length === 0) return roster;
+  const monthEnd = new Date(Y, M + 1, 0, 23, 59, 59, 999).getTime();  // 該月最後一刻
+  const currentSeqs = new Set(roster.map(p => p.seq));
+  const stillActive = deletedPersons.filter(p =>
+    (p.deletedAt || 0) > monthEnd && !currentSeqs.has(p.seq)
+  );
+  if (stillActive.length === 0) return roster;
+  return [...roster, ...stillActive].sort((a, b) => a.seq - b.seq);
+};
+
 // Find first/last training day in a month
 const firstTrainingDay = (Y, M) => {
   const days = buildMonthDays(Y, M).filter(x => !x.info.off);
@@ -1064,7 +1061,7 @@ function AttendanceApp({ user }) {
   const TRAINING_DAYS = useMemo(() => MONTH_DAYS.filter(x => !x.info.off), [MONTH_DAYS]);
   const [period, setPeriod] = useState("am");
   const [attendance, setAttendanceLocal] = useState({});
-  const [roster, setRosterLocal] = useState(() => sortRoster(DEFAULT_ROSTER));
+  const [roster, setRosterLocal] = useState(DEFAULT_ROSTER);
   const [config, setConfigLocal] = useState({ admins: [] });
   const [configLoaded, setConfigLoaded] = useState(false);
   const [screenshotMode, setScreenshotMode] = useState(false);
@@ -1073,6 +1070,8 @@ function AttendanceApp({ user }) {
   // 比賽成績資料
   const [swimStats, setSwimStatsLocal] = useState({ events: [], meets: [], swimmers: {}, _version: null });
   const [swimStatsLoaded, setSwimStatsLoaded] = useState(false);
+  // 已刪除人員（畢業生等）— 供歷史月份統計使用,僅管理員訂閱
+  const [deletedPersons, setDeletedPersons] = useState([]);
 
   // === Firestore real-time sync: attendance ===
   useEffect(() => {
@@ -1100,7 +1099,7 @@ function AttendanceApp({ user }) {
       ref,
       (snap) => {
         if (snap.exists() && Array.isArray(snap.data().value)) {
-          setRosterLocal(sortRoster(snap.data().value));
+          setRosterLocal(snap.data().value);
         }
       },
       (err) => console.error("Roster listen error:", err)
@@ -1179,6 +1178,20 @@ function AttendanceApp({ user }) {
   const isPending = pendingList.includes(userEmail);
   const noAdminsYet = configLoaded && !ownerEmail && adminList.length === 0;
 
+  // === Firestore sync: deleted_persons（畢業生等）— 供歷史月份統計,僅管理員可讀 ===
+  useEffect(() => {
+    if (!isAdmin) { setDeletedPersons([]); return; }
+    const ref = doc(db, "teams", "longmen", "data", "deleted_persons");
+    const unsub = onSnapshot(ref, (snap) => {
+      if (snap.exists() && Array.isArray(snap.data().value)) {
+        setDeletedPersons(snap.data().value);
+      } else {
+        setDeletedPersons([]);
+      }
+    }, () => setDeletedPersons([]));
+    return unsub;
+  }, [isAdmin]);
+
   // === 24 小時寬限期：判斷某個日期是否還可以被一般管理員修改 ===
   // 規則：訓練日當天的 23:59 之後鎖定，需主管理員才能改
   const canEditDate = (dateStr) => {
@@ -1233,7 +1246,7 @@ function AttendanceApp({ user }) {
 
   const setRoster = (updater, opts = {}) => {
     setRosterLocal((prev) => {
-      const next = sortRoster(typeof updater === "function" ? updater(prev) : updater);
+      const next = typeof updater === "function" ? updater(prev) : updater;
       setSyncStatus("saving");
       const ref = doc(db, "teams", "longmen", "data", "roster");
       setDoc(ref, {
@@ -1300,10 +1313,12 @@ function AttendanceApp({ user }) {
   // 匯出 xlsx 三分頁：個人匯總 / 場次彙整 / 完整紀錄
   const exportAll = () => {
     const wb = XLSX.utils.book_new();
+    // 匯出用名單：歷史月份自動納入該月仍在隊的已畢業成員
+    const exportRoster = withGraduated(roster, deletedPersons, Y, M);
 
     // ========== Sheet 1: 個人匯總 ==========
-    // 依顯示順序排序（年級→班級→座號，方便家長/教練查找）
-    const personData = sortRoster(roster).map((p, pIdx) => {
+    // 按序號排序（依名冊順序，方便家長/教練查找）
+    const personData = [...exportRoster].sort((a, b) => a.seq - b.seq).map(p => {
       let scheduled = 0, present = 0, absent = 0, pending = 0, late = 0, bonus = 0;
       let yyAm = 0, yyPm = 0;
       let soloAm = 0, soloPm = 0;  // 個練計數
@@ -1373,7 +1388,7 @@ function AttendanceApp({ user }) {
       const soloTotal = soloAm + soloPm;
       const yyFee = yyPaid * VENUE_FEE;
       return {
-        "序號": pIdx + 1,
+        "序號": p.seq,
         "班級": p.cls,
         "座號": p.num,
         "姓名": p.name,
@@ -1425,8 +1440,8 @@ function AttendanceApp({ user }) {
     XLSX.utils.book_append_sheet(wb, ws1, "個人匯總");
 
     // ========== Sheet 2: 場次彙整 ==========
-    // 在每場次內，隊員按顯示順序排序
-    const sortedRoster = sortRoster(roster);
+    // 在每場次內，隊員按序號排序
+    const sortedRoster = [...exportRoster].sort((a, b) => a.seq - b.seq);
     const sessionData = [];
     TRAINING_DAYS.forEach(day => {
       const dayData = attendance[day.dateStr] || {};
@@ -1522,7 +1537,7 @@ function AttendanceApp({ user }) {
         const soloSlot = dayData[per === "am" ? "am_solo" : "pm_solo"] || {};
         const venue = getVenue(attendance, day.dateStr, per);
         const isYy = venue === "yongyun";
-        sortedRoster.forEach((p, pIdx) => {
+        sortedRoster.forEach(p => {
           const sch = getSch(attendance, day.dateStr, p, idx);
           const ac = slot[p.seq];
           const isLate = !!lateSlot[p.seq];
@@ -1537,7 +1552,7 @@ function AttendanceApp({ user }) {
             "星期": day.info.dayLabel,
             "時段": per === "am" ? "早訓" : "午訓",
             "場地": VENUES[venue].label,
-            "序號": pIdx + 1,
+            "序號": p.seq,
             "班級": p.cls,
             "座號": p.num,
             "姓名": p.name,
@@ -1717,11 +1732,13 @@ function AttendanceApp({ user }) {
               screenshotMode={screenshotMode} setScreenshotMode={setScreenshotMode}
               Y={Y} M={M} MONTH_DAYS={MONTH_DAYS} TRAINING_DAYS={TRAINING_DAYS}
               isAdmin={isAdmin}
+              deletedPersons={deletedPersons}
             />
           )}
           {tab === "monthly" && (
             <MonthlyView attendance={attendance} setSelectedDate={setSelectedDate} setTab={setTab}
-                         Y={Y} M={M} TRAINING_DAYS={TRAINING_DAYS} isAdmin={isAdmin} />
+                         Y={Y} M={M} TRAINING_DAYS={TRAINING_DAYS} isAdmin={isAdmin}
+                         deletedPersons={deletedPersons} />
           )}
           {tab === "manage" && (
             <ManagementView
@@ -2311,7 +2328,7 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
   const dayAnyPmSolo = attendance[selectedDate]?.pm_solo || {};
   const dayNote = attendance[selectedDate]?.notes || "";
 
-  const rows = useMemo(() => roster.map((p, i) => {
+  const rows = useMemo(() => roster.map(p => {
     const scheduled = getSch(attendance, selectedDate, p, sessionIdx);
     const actual = sessionAtt[p.seq] || null;
     const late = !!sessionLate[p.seq];
@@ -2325,7 +2342,7 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
     else if (!scheduled && actual === "present") status = "bonus";
     else if (!scheduled && actual === "absent") status = "confirmed_excused";
     else if (scheduled && !actual) status = "pending";
-    return { ...p, no: i + 1, scheduled, actual, status, late, solo, dayHasSolo, note };
+    return { ...p, scheduled, actual, status, late, solo, dayHasSolo, note };
   }), [sessionIdx, sessionAtt, sessionLate, sessionNotes, sessionSolo, dayAnyAmSolo, dayAnyPmSolo, roster]);
 
   const stats = useMemo(() => ({
@@ -2569,7 +2586,7 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
       [`場地：${venueLabel}${fee > 0 ? ` (每人 $${fee})` : ""}`].join(","),
       ["序號", "班級", "座號", "姓名", "年級", "表定", "實際", "遲到", "備註"].join(","),
       ...rows.map(r => [
-        r.no ?? r.seq, r.cls, r.num, r.name, GRADE_NAMES[r.grade],
+        r.seq, r.cls, r.num, r.name, GRADE_NAMES[r.grade],
         r.scheduled ? "出席" : "不出席",
         r.actual === "present" ? "出席" : r.actual === "absent" ? "未到" : "未點名",
         r.late ? "是" : "",
@@ -2976,7 +2993,7 @@ function RollCallView({ selectedDate, setSelectedDate, period, setPeriod, attend
             {rows.filter(r => r.status === "no_show").map(r => (
               <span key={r.seq} className="px-2.5 py-1 rounded-md text-sm flex items-center gap-1.5"
                     style={{ background: "var(--red)", color: "#fff" }}>
-                <span className="num text-xs opacity-70">{pad(r.no ?? r.seq)}</span>
+                <span className="num text-xs opacity-70">{pad(r.seq)}</span>
                 {r.name}
                 <span className="num text-xs opacity-70">{r.cls}-{r.num}</span>
               </span>
@@ -3044,7 +3061,7 @@ function CallRow({ m, mark, markLate, markSolo, setPersonNote, isYongyun, isAdmi
          style={{ background: bg, borderColor: bd, opacity: dim, transition: "all 0.2s" }}>
       <div className="flex items-center gap-2 sm:gap-3">
         <div className="num text-[11px] sm:text-xs tabular-nums shrink-0"
-             style={{ color: "var(--mute)", minWidth: "22px" }}>{pad(m.no ?? m.seq)}</div>
+             style={{ color: "var(--mute)", minWidth: "22px" }}>{pad(m.seq)}</div>
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2 flex-wrap">
             <span className="text-base sm:text-lg font-medium truncate" style={{ color: "var(--ink)" }}>{m.name}</span>
@@ -3243,8 +3260,13 @@ function DayNoteSection({ dayNote, setDayNote, locked }) {
 
 // ============ DAILY VIEW ============
 function DailyView({ selectedDate, setSelectedDate, attendance, setTab, setPeriod, screenshotMode, setScreenshotMode,
-                    Y, M, MONTH_DAYS, TRAINING_DAYS, isAdmin }) {
-  const { roster } = useRoster();
+                    Y, M, MONTH_DAYS, TRAINING_DAYS, isAdmin, deletedPersons }) {
+  const { roster: currentRoster } = useRoster();
+  // 歷史月份自動納入「該月還在隊、之後才畢業」的成員（僅管理員拿得到 deletedPersons）
+  const roster = useMemo(
+    () => withGraduated(currentRoster, deletedPersons, Y, M),
+    [currentRoster, deletedPersons, Y, M]
+  );
   const [showCalendar, setShowCalendar] = useState(false);
   const [groupBy, setGroupBy] = useState("grade");
   const navDate = (delta) => {
@@ -3272,13 +3294,13 @@ function DailyView({ selectedDate, setSelectedDate, attendance, setTab, setPerio
   const pmNotes = attendance[selectedDate]?.pm_notes || {};
   const dayNote = attendance[selectedDate]?.notes || "";
 
-  const rows = roster.map((p, i) => {
+  const rows = roster.map(p => {
     const amSch = getSch(attendance, selectedDate, p, dateInfo.amIdx);
     const pmSch = getSch(attendance, selectedDate, p, dateInfo.pmIdx);
     const amStatus = computeStatus(amSch, amAtt[p.seq]);
     const pmStatus = computeStatus(pmSch, pmAtt[p.seq]);
     return {
-      ...p, no: i + 1, amSch, pmSch, amStatus, pmStatus,
+      ...p, amSch, pmSch, amStatus, pmStatus,
       amActual: amAtt[p.seq], pmActual: pmAtt[p.seq],
       amLate: !!amLate[p.seq], pmLate: !!pmLate[p.seq],
       amNote: amNotes[p.seq] || "", pmNote: pmNotes[p.seq] || "",
@@ -3314,7 +3336,7 @@ function DailyView({ selectedDate, setSelectedDate, attendance, setTab, setPerio
       if (amV === "yongyun" && (r.amActual === "present")) dayFee += VENUE_FEE;
       if (pmV === "yongyun" && (r.pmActual === "present")) dayFee += VENUE_FEE;
       lines.push([
-        r.no ?? r.seq, r.cls, r.num, r.name, GRADE_NAMES[r.grade],
+        r.seq, r.cls, r.num, r.name, GRADE_NAMES[r.grade],
         r.amSch ? "出席" : "不出席",
         r.amActual === "present" ? "出席" : r.amActual === "absent" ? "未到" : "未點名",
         r.amLate ? "是" : "",
@@ -3639,7 +3661,7 @@ function DailyRow({ m }) {
              background: "var(--panel)",
            }}>
         <span className="num text-[11px] sm:text-xs tabular-nums" style={{ color: "var(--mute)" }}>
-          {pad(m.no ?? m.seq)}
+          {pad(m.seq)}
         </span>
         <div className="min-w-0">
           <div className="text-sm sm:text-base font-medium truncate" style={{ color: "var(--ink)" }}>
@@ -3682,9 +3704,15 @@ function DailyRow({ m }) {
 }
 
 // ============ MONTHLY VIEW ============
-function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS, isAdmin }) {
-  const { roster } = useRoster();
-  const personStats = useMemo(() => roster.map((p, i) => {
+function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS, isAdmin, deletedPersons }) {
+  const { roster: currentRoster } = useRoster();
+  // 歷史月份自動納入「該月還在隊、之後才畢業」的成員（僅管理員拿得到 deletedPersons）
+  const roster = useMemo(
+    () => withGraduated(currentRoster, deletedPersons, Y, M),
+    [currentRoster, deletedPersons, Y, M]
+  );
+  const graduatedCount = roster.length - currentRoster.length;
+  const personStats = useMemo(() => roster.map(p => {
     let scheduled = 0, present = 0, absent = 0, bonus = 0, pending = 0, late = 0;
     let yyAm = 0, yyPm = 0; // 永運場次出席（早/午）
     let soloAm = 0, soloPm = 0; // 個練場次（早/午）
@@ -3760,7 +3788,7 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS,
     const soloTotal = soloAm + soloPm;
     const yyFee = yyPaid * VENUE_FEE;
     return {
-      ...p, no: i + 1, scheduled, present, absent, bonus, pending, late, rate, matrix,
+      ...p, scheduled, present, absent, bonus, pending, late, rate, matrix,
       yyAm, yyPm, yyTotal, yyFee,
       soloAm, soloPm, soloTotal,
       yyAmPaid, yyPmPaid, yyPaid,
@@ -3803,7 +3831,7 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS,
     if (sortBy === "rate") arr.sort((a, b) => b.rate - a.rate);
     else if (sortBy === "absent") arr.sort((a, b) => b.absent - a.absent);
     else if (sortBy === "present") arr.sort((a, b) => b.present - a.present);
-    else arr.sort(personCompare);
+    else arr.sort((a, b) => a.seq - b.seq);
     return arr;
   }, [personStats, sortBy]);
 
@@ -3874,6 +3902,12 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS,
           <MiniStat label="實到總人次" v={team.present} sub="次" color="var(--green-2)" />
           <MiniStat label="缺席總人次" v={team.absent} sub="次" color="var(--red-2)" alert={team.absent > 0} />
         </div>
+        {graduatedCount > 0 && (
+          <div className="mt-2 text-[11px] px-2 py-1 rounded"
+               style={{ background: "rgba(255,252,246,0.1)", color: "rgba(255,252,246,0.8)" }}>
+            🎓 本月統計含 {graduatedCount} 位已畢業成員（當時仍在隊）
+          </div>
+        )}
       </section>
 
       <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3954,11 +3988,11 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
   // 應收名單：有應收費用的人（排除整月都個練的人）
   // 應收清單：所有隊員都列出（依名冊順序），沒永運費的顯示 0
   const paidList = useMemo(() =>
-    [...personStats].sort(personCompare),
+    [...personStats].sort((a, b) => a.seq - b.seq),
     [personStats]);
   // 個練名單：有個練場次的人（這個保持只列有的）
   const soloList = useMemo(() =>
-    [...personStats].filter(s => s.soloTotal > 0).sort(personCompare),
+    [...personStats].filter(s => s.soloTotal > 0).sort((a, b) => a.seq - b.seq),
     [personStats]);
 
   const exportFee = () => {
@@ -3985,9 +4019,9 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
     });
 
     // 為每個人 × 每個場次計算狀態
-    const list = paidList.map((s, sIdx) => {
+    const list = paidList.map(s => {
       const row = {
-        "序號": sIdx + 1,
+        "序號": s.seq,
         "班級": s.cls,
         "座號": s.num,
         "姓名": s.name,
@@ -4059,7 +4093,7 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
     // ========== Sheet 2: 個練名單（不計費） ==========
     if (soloList.length > 0) {
       const list2 = soloList.map(s => ({
-        "序號": s.no ?? s.seq,
+        "序號": s.seq,
         "班級": s.cls,
         "座號": s.num,
         "姓名": s.name,
@@ -4204,7 +4238,7 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
                            transition: "background 0.15s",
                          }}>
                       <span className="num text-[11px]" style={{ color: VENUES.yongyun.color, opacity: 0.7 }}>
-                        {pad(s.no ?? s.seq)}
+                        {pad(s.seq)}
                       </span>
                       <div className="min-w-0 flex items-center gap-1">
                         {!noFee && (
@@ -4337,7 +4371,7 @@ function YongyunFeeSection({ Y, M, yyStats, personStats, TRAINING_DAYS, attendan
                        background: "rgba(124, 77, 188, 0.04)",
                      }}>
                   <span className="num text-[11px]" style={{ color: "#7C4DBC", opacity: 0.7 }}>
-                    {pad(s.no ?? s.seq)}
+                    {pad(s.seq)}
                   </span>
                   <div className="min-w-0">
                     <div className="font-medium truncate" style={{ color: "var(--ink)" }}>{s.name}</div>
@@ -4437,7 +4471,7 @@ function PersonMonthRow({ s, onCellClick }) {
     <div className="rounded-xl p-3 sm:p-4 border"
          style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
       <div className="flex items-baseline gap-2 mb-2 flex-wrap">
-        <span className="num text-[11px]" style={{ color: "var(--mute)" }}>{pad(s.no ?? s.seq)}</span>
+        <span className="num text-[11px]" style={{ color: "var(--mute)" }}>{pad(s.seq)}</span>
         <span className="text-base sm:text-lg font-medium" style={{ color: "var(--ink)" }}>{s.name}</span>
         <span className="num text-[10px] sm:text-xs" style={{ color: "var(--mute)" }}>
           {s.cls}-{pad(s.num)} · {GRADE_NAMES[s.grade]}
@@ -4556,12 +4590,12 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
     if (sch && !actual) return "pending";
     return "pending_excused";
   };
-  const rows = roster.map((p, i) => {
+  const rows = roster.map(p => {
     const amSch = getSch(attendance, selectedDate, p, dateInfo.amIdx);
     const pmSch = getSch(attendance, selectedDate, p, dateInfo.pmIdx);
     const dayHasSolo = !!(amSolo[p.seq] || pmSolo[p.seq]);
     return {
-      ...p, no: i + 1, amSch, pmSch,
+      ...p, amSch, pmSch,
       amStatus: computeStatus(amSch, amAtt[p.seq]),
       pmStatus: computeStatus(pmSch, pmAtt[p.seq]),
       amLate: !!amLate[p.seq],
@@ -4710,7 +4744,7 @@ function ScreenshotView({ selectedDate, attendance, onExit, onPrevDay, onNextDay
         boxShadow: hasLate && !hasNoShow ? "inset 3px 0 0 #E07B30" : "none",
       }}>
         <span style={{ background: gradeBar(m.grade), height: 10, borderRadius: 1 }} />
-        <span className="num" style={{ fontSize: 9, color: "#8B8275" }}>{pad(m.no ?? m.seq)}</span>
+        <span className="num" style={{ fontSize: 9, color: "#8B8275" }}>{pad(m.seq)}</span>
         <span style={{
           fontSize: 12, fontWeight: hasNoShow ? 700 : 500,
           color: hasNoShow ? "#7A1F0F" : "#141210",
@@ -5745,18 +5779,15 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
   }
 
   // CASE 3: Admin → full edit
-  const sortedRoster = sortRoster(roster);
-  // 顯示序號（列序）：seq → 1, 2, 3…（seq 只當資料 key，不再顯示）
-  const dnOf = {};
-  sortedRoster.forEach((p, i) => { dnOf[p.seq] = i + 1; });
+  const sortedRoster = [...roster].sort((a, b) => a.seq - b.seq);
 
   // ===== 匯出隊員名單 =====
   const exportRoster = () => {
     const wb = XLSX.utils.book_new();
 
     // ========== Sheet 1: 基本資料 ==========
-    const basicData = sortedRoster.map((p, i) => ({
-      "序號": i + 1,
+    const basicData = sortedRoster.map(p => ({
+      "序號": p.seq,
       "班級": p.cls,
       "座號": p.num,
       "姓名": p.name,
@@ -5769,8 +5800,8 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
     XLSX.utils.book_append_sheet(wb, ws1, "基本資料");
 
     // ========== Sheet 2: 訓練表（每場勾選） ==========
-    const schData = sortedRoster.map((p, i) => ({
-      "序號": i + 1,
+    const schData = sortedRoster.map(p => ({
+      "序號": p.seq,
       "班級": p.cls,
       "座號": p.num,
       "姓名": p.name,
@@ -5800,7 +5831,7 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
 
     // ========== Sheet 3: 訓練表（簡潔版） ==========
     const dayLabels = ["一", "二", "三", "四", "五", "六"];
-    const schSimpleData = sortedRoster.map((p, i) => {
+    const schSimpleData = sortedRoster.map(p => {
       const amDays = [];
       const pmDays = [];
       for (let i = 0; i < 6; i++) {
@@ -5808,7 +5839,7 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
         if (p.sch[i * 2 + 1] === 1) pmDays.push(dayLabels[i]);
       }
       return {
-        "序號": i + 1,
+        "序號": p.seq,
         "班級": p.cls,
         "座號": p.num,
         "姓名": p.name,
@@ -5834,7 +5865,7 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
       list.forEach(p => {
         gradeData.push({
           "年級": GRADE_NAMES[g],
-          "序號": dnOf[p.seq] ?? p.seq,
+          "序號": p.seq,
           "班級": p.cls,
           "座號": p.num,
           "姓名": p.name,
@@ -5922,7 +5953,7 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
     const exists = roster.find(p => p.seq === person.seq);
     let newSeq = person.seq;
     if (exists) {
-      newSeq = [...roster, ...(deletedPersons || [])].reduce((m, p) => Math.max(m, Number(p.seq) || 0), 0) + 1;
+      newSeq = Math.max(...roster.map(p => p.seq), 0) + 1;
     }
     const restored = { ...person, seq: newSeq };
     delete restored.deletedAt;
@@ -5953,8 +5984,7 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
   };
 
   const addPerson = (newP) => {
-    // seq 是出席資料的 key：連同已軟刪除的人一起取最大值，確保舊編號永不重複使用
-    const maxSeq = [...roster, ...(deletedPersons || [])].reduce((m, p) => Math.max(m, Number(p.seq) || 0), 0);
+    const maxSeq = roster.reduce((m, p) => Math.max(m, p.seq), 0);
     const newPerson = { ...newP, seq: maxSeq + 1 };
     setRoster(prev => [...prev, newPerson], {
       logAction: "add_person",
@@ -6091,7 +6121,7 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
           </div>
           <div className="space-y-2">
             {g.members.map(m => (
-              <ManagementRow key={m.seq} m={m} no={dnOf[m.seq]}
+              <ManagementRow key={m.seq} m={m}
                              onEditInfo={() => setEditingPerson(m)}
                              onEditSch={() => setEditingSch(m)}
                              onDelete={() => setConfirmDelete(m)} />
@@ -6196,13 +6226,9 @@ function BootstrapAdminPrompt({ user, setConfig, logAction }) {
 }
 
 function ReadOnlyManagement({ roster, ownerEmail, adminEmails, userEmail }) {
-  const sortedRoster = sortRoster(roster);
-  // 顯示序號（列序）：seq → 1, 2, 3…
-  const dnOf = {};
-  sortedRoster.forEach((p, i) => { dnOf[p.seq] = i + 1; });
   const grouped = [9, 8, 7].map(g => ({
     grade: g, label: GRADE_NAMES[g],
-    members: sortedRoster.filter(p => p.grade === g),
+    members: roster.filter(p => p.grade === g).sort((a, b) => a.seq - b.seq),
   })).filter(g => g.members.length > 0);
 
   return (
@@ -6231,7 +6257,7 @@ function ReadOnlyManagement({ roster, ownerEmail, adminEmails, userEmail }) {
               <div key={m.seq} className="flex items-center gap-3 px-3 py-2 rounded-lg border"
                    style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
                 <span className="num text-xs" style={{ color: "var(--mute)", minWidth: 22 }}>
-                  {pad(dnOf[m.seq] ?? m.seq)}
+                  {pad(m.seq)}
                 </span>
                 <span className="text-sm font-medium flex-1" style={{ color: "var(--ink)" }}>{m.name}</span>
                 <span className="num text-[10px]" style={{ color: "var(--mute)" }}>
@@ -6819,7 +6845,7 @@ function AdminListSection({ user, config, setConfig, isOwner, logAction }) {
   );
 }
 
-function ManagementRow({ m, no, onEditInfo, onEditSch, onDelete }) {
+function ManagementRow({ m, onEditInfo, onEditSch, onDelete }) {
   const schDays = ["一","二","三","四","五","六"];
   const sessionCount = m.sch.filter(x => x === 1).length;
   return (
@@ -6828,7 +6854,7 @@ function ManagementRow({ m, no, onEditInfo, onEditSch, onDelete }) {
       <div className="flex items-center gap-3 flex-wrap">
         <span className="num text-xs tabular-nums shrink-0"
               style={{ color: "var(--mute)", minWidth: "26px" }}>
-          {pad(no ?? m.seq)}
+          {pad(m.seq)}
         </span>
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2 flex-wrap">
