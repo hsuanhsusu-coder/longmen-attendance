@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, createContext, useContext } from "react";
+import { useState, useEffect, useMemo, useRef, createContext, useContext, Component } from "react";
 import { onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, signOut } from "firebase/auth";
 import { doc, onSnapshot, setDoc, getDoc, collection, addDoc, query, orderBy, limit, getDocs, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db, googleProvider } from "./firebase";
@@ -1714,6 +1714,7 @@ function AttendanceApp({ user }) {
         <TabBar tab={tab} setTab={setTab} isOwner={isOwner} isAdmin={isAdmin} />
 
         <div className="tab-fade">
+        <ViewErrorBoundary key={tab}>
           {tab === "rollcall" && (
             <RollCallView
               selectedDate={selectedDate} setSelectedDate={setSelectedDate}
@@ -1784,6 +1785,7 @@ function AttendanceApp({ user }) {
               logAction={logAction}
             />
           )}
+        </ViewErrorBoundary>
         </div>
 
         <footer className="mt-10 pt-6 border-t flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] sm:text-xs tk-l"
@@ -1798,6 +1800,33 @@ function AttendanceApp({ user }) {
     </div>
     </RosterContext.Provider>
   );
+}
+
+// ============ 分頁錯誤防護：任一分頁畫面出錯時顯示錯誤訊息，而不是整頁白掉 ============
+class ViewErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error("View crashed:", error, info); }
+  render() {
+    if (this.state.error) {
+      const msg = String(this.state.error?.message || this.state.error);
+      return (
+        <div className="rounded-2xl border-2 p-4 text-sm"
+             style={{ borderColor: "var(--red)", background: "var(--red-bg)", color: "var(--ink)" }}>
+          <div className="font-bold mb-1" style={{ color: "var(--red)" }}>⚠ 這個分頁顯示時發生錯誤</div>
+          <div className="text-xs mb-2" style={{ color: "var(--ink-2)" }}>請截圖下面這段訊息回報，切換其他分頁可繼續使用。</div>
+          <pre className="text-[11px] p-2 rounded overflow-x-auto"
+               style={{ background: "var(--panel)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{msg}</pre>
+          <button onClick={() => this.setState({ error: null })}
+                  className="btn-tactile mt-2 px-3 py-1.5 rounded-md text-xs border-2 font-medium"
+                  style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)", background: "var(--panel)" }}>
+            重試
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 // ============ TAB BAR ============
@@ -8255,11 +8284,11 @@ function AuditLogView({ user, logAction }) {
     ];
     filteredLogs.forEach(l => {
       lines.push([
-        new Date(l.timestamp).toLocaleString("zh-TW"),
-        l.user || "",
-        ACTION_LABELS[l.action] || l.action,
-        l.targetLabel || l.target || "",
-        (l.note || "").replace(/[\r\n,]/g, " "),
+        (() => { const d = new Date(typeof l.timestamp?.seconds === "number" ? l.timestamp.seconds * 1000 : l.timestamp); return isNaN(d.getTime()) ? "" : d.toLocaleString("zh-TW"); })(),
+        safeText(l.user),
+        ACTION_LABELS[l.action] || safeText(l.action),
+        safeText(l.targetLabel || l.target),
+        safeText(l.note).replace(/[\r\n,]/g, " "),
       ].join(","));
     });
     const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
@@ -8333,6 +8362,7 @@ function AuditLogView({ user, logAction }) {
             <option value="edit_attendance">點名修改</option>
             <option value="add_person">新增隊員</option>
             <option value="edit_person">編輯隊員</option>
+            <option value="import_schedule">批次匯入課表</option>
             <option value="delete_person">刪除隊員</option>
             <option value="restore_person">還原隊員</option>
             <option value="permanent_delete_person">永久刪除</option>
@@ -8399,22 +8429,38 @@ const ACTION_LABELS = {
   reject_viewer: "✕ 拒絕訪客",
   remove_viewer: "🗑 移除訪客",
   request_access: "📨 申請存取",
+  import_schedule: "📥 批次匯入課表",
 };
+
+// 把紀錄欄位轉成可安全顯示的字串（舊資料或其他來源可能存成物件/數字）
+const safeText = (v) => {
+  if (v == null) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  try { return JSON.stringify(v); } catch { return String(v); }
+};
+const safeJson = (v) => { try { return JSON.stringify(v, null, 2); } catch { return String(v); } };
 
 function AuditLogRow({ log }) {
   const [expanded, setExpanded] = useState(false);
-  const dt = new Date(log.timestamp);
-  const dateStr = dt.toLocaleDateString("zh-TW");
-  const timeStr = dt.toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" });
-  const label = ACTION_LABELS[log.action] || log.action;
-  const hasDetails = log.before || log.after || log.note;
+  // timestamp 可能是數字、字串、或 Firestore Timestamp 物件
+  const ts = typeof log.timestamp?.toMillis === "function" ? log.timestamp.toMillis()
+           : typeof log.timestamp?.seconds === "number" ? log.timestamp.seconds * 1000
+           : log.timestamp;
+  const dt = new Date(ts);
+  const valid = !isNaN(dt.getTime());
+  const dateStr = valid ? dt.toLocaleDateString("zh-TW") : "—";
+  const timeStr = valid ? dt.toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" }) : "";
+  const action = safeText(log.action);
+  const label = ACTION_LABELS[action] || action || "(未知動作)";
+  const hasDetails = log.before != null || log.after != null || log.note != null;
 
   // 動作類型決定顏色
   let accent = "var(--ink)";
-  if (log.action?.includes("delete")) accent = "var(--red)";
-  else if (log.action?.includes("add") || log.action?.includes("restore")) accent = "var(--green)";
-  else if (log.action?.includes("edit")) accent = "var(--blue)";
-  else if (log.action === "set_first_owner") accent = "var(--accent-2)";
+  if (action.includes("delete")) accent = "var(--red)";
+  else if (action.includes("add") || action.includes("restore")) accent = "var(--green)";
+  else if (action.includes("edit") || action.includes("import")) accent = "var(--blue)";
+  else if (action === "set_first_owner") accent = "var(--accent-2)";
 
   return (
     <div className="rounded-xl border p-3"
@@ -8427,7 +8473,7 @@ function AuditLogRow({ log }) {
           {label}
         </span>
         <span className="num text-[11px]" style={{ color: "var(--mute)" }}>
-          by {log.user}
+          by {safeText(log.user)}
         </span>
         {hasDetails && (
           <button onClick={() => setExpanded(e => !e)}
@@ -8437,35 +8483,35 @@ function AuditLogRow({ log }) {
           </button>
         )}
       </div>
-      {log.targetLabel && (
+      {log.targetLabel != null && (
         <div className="text-sm mt-1" style={{ color: "var(--ink)" }}>
-          {log.targetLabel}
+          {safeText(log.targetLabel)}
         </div>
       )}
       {expanded && (
         <div className="mt-2 pt-2 border-t text-xs space-y-2"
              style={{ borderColor: "var(--line)" }}>
-          {log.note && (
+          {log.note != null && (
             <div>
               <div className="text-[10px] tk-l mb-1" style={{ color: "var(--mute)" }}>備註</div>
-              <div style={{ color: "var(--ink-2)" }}>{log.note}</div>
+              <div style={{ color: "var(--ink-2)" }}>{safeText(log.note)}</div>
             </div>
           )}
-          {log.before && (
+          {log.before != null && (
             <div>
               <div className="text-[10px] tk-l mb-1" style={{ color: "var(--red)" }}>修改前</div>
               <pre className="text-[10px] p-2 rounded overflow-x-auto"
                    style={{ background: "var(--red-bg)", color: "var(--ink-2)" }}>
-                {JSON.stringify(log.before, null, 2)}
+                {safeJson(log.before)}
               </pre>
             </div>
           )}
-          {log.after && (
+          {log.after != null && (
             <div>
               <div className="text-[10px] tk-l mb-1" style={{ color: "var(--green)" }}>修改後</div>
               <pre className="text-[10px] p-2 rounded overflow-x-auto"
                    style={{ background: "var(--green-bg)", color: "var(--ink-2)" }}>
-                {JSON.stringify(log.after, null, 2)}
+                {safeJson(log.after)}
               </pre>
             </div>
           )}
