@@ -8,7 +8,7 @@ import {
   Award, ChevronLeft, ChevronRight, ListChecks, CalendarDays,
   BarChart3, ClipboardCheck, Sun, Moon, Trophy, AlertCircle, Camera, Eye,
   LogOut, Cloud, CloudOff, RefreshCw, User, Settings, Plus, Trash2, Edit3, Save,
-  Crown, Shield, Lock, History, Undo2, Filter, FileText, Share2, Clock
+  Crown, Shield, Lock, History, Undo2, Filter, FileText, Share2, Clock, Upload
 } from "lucide-react";
 
 // ============ DATA ============
@@ -6477,6 +6477,7 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [showDeleted, setShowDeleted] = useState(false);
   const [deletedPersons, setDeletedPersons] = useState([]);
+  const [importingSch, setImportingSch] = useState(false);
 
   // 訂閱軟刪除集合
   useEffect(() => {
@@ -6710,6 +6711,23 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
     });
   };
 
+  // 批次套用匯入的課表（一次寫入，留一筆稽核紀錄）
+  const applyImportedSch = (items) => {
+    if (!items || items.length === 0) { setImportingSch(false); return; }
+    const map = {};
+    items.forEach(m => { map[m.person.seq] = m.newSch; });
+    setRoster(prev => prev.map(p => map[p.seq] ? { ...p, sch: map[p.seq] } : p), {
+      logAction: "import_schedule",
+      logPayload: {
+        target: "roster/sch",
+        targetLabel: `批次匯入課表（${items.length} 人）：${items.map(m => m.person.name).join("、")}`,
+        before: Object.fromEntries(items.map(m => [m.person.seq, m.oldSch])),
+        after: Object.fromEntries(items.map(m => [m.person.seq, m.newSch])),
+      },
+    });
+    setImportingSch(false);
+  };
+
   const addPerson = (newP) => {
     const maxSeq = roster.reduce((m, p) => Math.max(m, p.seq), 0);
     const newPerson = { ...newP, seq: maxSeq + 1 };
@@ -6772,6 +6790,12 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
                     style={{ borderColor: "var(--line-strong)", background: "var(--panel)", color: "var(--ink-2)" }}>
               <Download size={14} strokeWidth={2.5} />
               匯出名單
+            </button>
+            <button onClick={() => setImportingSch(true)}
+                    className="btn-tactile flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg border-2 font-medium text-sm"
+                    style={{ borderColor: "var(--line-strong)", background: "var(--panel)", color: "var(--ink-2)" }}>
+              <Upload size={14} strokeWidth={2.5} />
+              匯入課表
             </button>
             <button onClick={() => setAdding(true)}
                     className="btn-tactile flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg border-2 font-medium text-sm"
@@ -6861,6 +6885,11 @@ function ManagementView({ user, config, setConfig, isOwner, isAdmin, noAdminsYet
         <EditPersonModal person={editingPerson}
                          onSave={(patch) => { updatePerson(editingPerson.seq, patch, editingPerson); setEditingPerson(null); }}
                          onCancel={() => setEditingPerson(null)} />
+      )}
+      {importingSch && (
+        <ImportScheduleModal roster={roster}
+                             onApply={applyImportedSch}
+                             onCancel={() => setImportingSch(false)} />
       )}
       {editingSch && (
         <EditScheduleModal person={editingSch}
@@ -7704,6 +7733,289 @@ function EditPersonModal({ person, isNew, onSave, onCancel }) {
   );
 }
 
+// ============ 批次匯入課表（意願調查「名單×場次 CSV 打勾表」→ roster.sch） ============
+// CSV 格式（longmen-schedule 匯出）：序號,姓名,座號,年級,週一晨訓(龍門),週一午訓(龍門),…,週六午訓(永運),固定場次數,備註
+// 最後一列「合計」會自動略過；備註欄可能含引號與換行，解析器支援 RFC4180。
+const SLOT_LABELS = ["週一早", "週一午", "週二早", "週二午", "週三早", "週三午", "週四早", "週四午", "週五早", "週五午", "週六早", "週六午"];
+
+// 簡易 RFC4180 CSV 解析：支援雙引號、引號內逗號/換行、CRLF、BOM
+const parseCsvText = (text) => {
+  const rows = [];
+  let row = [], cell = "", inQ = false;
+  const src = text.replace(/^\uFEFF/, "");
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (inQ) {
+      if (c === '"') {
+        if (src[i + 1] === '"') { cell += '"'; i++; }
+        else inQ = false;
+      } else cell += c;
+    } else if (c === '"') inQ = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && src[i + 1] === "\n") i++;
+      row.push(cell); rows.push(row); row = []; cell = "";
+    } else cell += c;
+  }
+  if (cell !== "" || row.length > 0) { row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(x => String(x).trim() !== ""));
+};
+
+// 打勾判定：非空且不是明確的「否」符號 → 1
+const isTick = (v) => {
+  const s = String(v ?? "").trim();
+  if (!s) return 0;
+  return ["0", "x", "X", "✗", "✕", "-", "—", "否", "無"].includes(s) ? 0 : 1;
+};
+
+// 解析打勾表 → { entries, error }
+const parseScheduleCsv = (text) => {
+  const rows = parseCsvText(text);
+  if (rows.length < 2) return { entries: [], error: "檔案沒有資料列" };
+  const header = rows[0].map(h => String(h).trim());
+  const findCol = (pred) => header.findIndex(pred);
+  const nameCol = findCol(h => h === "姓名" || h.includes("姓名"));
+  if (nameCol < 0) return { entries: [], error: "找不到「姓名」欄，請確認是意願調查匯出的「名單×場次 CSV（打勾表）」" };
+  const seqCol = findCol(h => h === "序號");
+  const numCol = findCol(h => h === "座號");
+  const gradeCol = findCol(h => h === "年級");
+  const noteCol = findCol(h => h === "備註");
+  const dayKeys = ["週一", "週二", "週三", "週四", "週五", "週六"];
+  const slotCols = [];
+  dayKeys.forEach(day => {
+    const am = findCol(h => h.startsWith(day) && (h.includes("晨") || h.includes("早")));
+    const pm = findCol(h => h.startsWith(day) && h.includes("午"));
+    slotCols.push(am, pm);
+  });
+  const missingSlots = slotCols.map((c, i) => c < 0 ? SLOT_LABELS[i] : null).filter(Boolean);
+  if (missingSlots.length > 0) return { entries: [], error: `找不到場次欄：${missingSlots.join("、")}` };
+
+  const entries = [];
+  rows.slice(1).forEach(r => {
+    const name = String(r[nameCol] ?? "").trim();
+    if (!name || name === "合計" || name === "總計") return;
+    entries.push({
+      name,
+      seqCsv: seqCol >= 0 ? parseInt(r[seqCol], 10) || null : null,
+      num: numCol >= 0 ? parseInt(r[numCol], 10) || null : null,
+      gradeLabel: gradeCol >= 0 ? String(r[gradeCol] ?? "").trim() : "",
+      note: noteCol >= 0 ? String(r[noteCol] ?? "").trim() : "",
+      sch: slotCols.map(c => isTick(r[c])),
+    });
+  });
+  return { entries, error: null };
+};
+
+const normName = (s) => String(s || "").replace(/\s+/g, "").trim();
+
+// 課表摘要文字：一(全) 二(早) …
+const schSummary = (sch) => {
+  const days = ["一", "二", "三", "四", "五", "六"];
+  const parts = [];
+  for (let d = 0; d < 6; d++) {
+    const am = sch[d * 2] === 1, pm = sch[d * 2 + 1] === 1;
+    if (am && pm) parts.push(`${days[d]}(全)`);
+    else if (am) parts.push(`${days[d]}(早)`);
+    else if (pm) parts.push(`${days[d]}(午)`);
+  }
+  return parts.length ? parts.join(" ") : "無";
+};
+
+function ImportScheduleModal({ roster, onApply, onCancel }) {
+  const [fileName, setFileName] = useState("");
+  const [parsed, setParsed] = useState(null);     // { entries, error }
+  const [onlyChanged, setOnlyChanged] = useState(true);
+  const [excluded, setExcluded] = useState({});   // seq → true（管理員取消勾選的人）
+  const fileRef = useRef(null);
+
+  const handleFile = (file) => {
+    if (!file) return;
+    setFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (e) => setParsed(parseScheduleCsv(String(e.target.result || "")));
+    reader.onerror = () => setParsed({ entries: [], error: "讀檔失敗" });
+    reader.readAsText(file, "utf-8");
+  };
+
+  // 對應：姓名 → 同名再用座號 / 序號分辨
+  const plan = useMemo(() => {
+    if (!parsed || parsed.error) return null;
+    const byName = {};
+    roster.forEach(p => { const k = normName(p.name); (byName[k] = byName[k] || []).push(p); });
+    const matched = [], unmatched = [], ambiguous = [];
+    const usedSeq = new Set();
+    parsed.entries.forEach(e => {
+      const cands = byName[normName(e.name)] || [];
+      let p = null;
+      if (cands.length === 1) p = cands[0];
+      else if (cands.length > 1) {
+        p = cands.find(c => e.num != null && c.num === e.num)
+          || cands.find(c => e.seqCsv != null && c.seq === e.seqCsv)
+          || null;
+        if (!p) { ambiguous.push(e); return; }
+      }
+      if (!p) { unmatched.push(e); return; }
+      if (usedSeq.has(p.seq)) { ambiguous.push(e); return; }
+      usedSeq.add(p.seq);
+      const oldSch = Array.isArray(p.sch) ? p.sch.map(v => (v === 1 ? 1 : 0)) : Array(12).fill(0);
+      const added = [], removed = [];
+      for (let i = 0; i < 12; i++) {
+        if (oldSch[i] !== e.sch[i]) (e.sch[i] === 1 ? added : removed).push(SLOT_LABELS[i]);
+      }
+      matched.push({ person: p, entry: e, oldSch, newSch: e.sch, added, removed, changed: added.length + removed.length > 0 });
+    });
+    const notInCsv = roster.filter(p => !usedSeq.has(p.seq)).sort((a, b) => a.seq - b.seq);
+    matched.sort((a, b) => a.person.seq - b.person.seq);
+    return { matched, unmatched, ambiguous, notInCsv };
+  }, [parsed, roster]);
+
+  const toApply = useMemo(() => plan ? plan.matched.filter(m => m.changed && !excluded[m.person.seq]) : [], [plan, excluded]);
+  const visible = plan ? (onlyChanged ? plan.matched.filter(m => m.changed) : plan.matched) : [];
+
+  return (
+    <ModalShell onClose={onCancel} wide>
+      <div className="display-cn text-lg mb-1" style={{ color: "var(--accent-2)" }}>
+        批次匯入課表
+      </div>
+      <div className="text-xs mb-3" style={{ color: "var(--mute)" }}>
+        來源：意願調查「⬇️ 名單×場次 CSV（打勾表）」。依姓名對應（同名再比座號），只會更新有變動的人；已鎖定月份的快照不受影響。
+      </div>
+
+      {/* 選檔 */}
+      <div className="flex items-center gap-2 flex-wrap mb-3">
+        <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden"
+               onChange={e => { handleFile(e.target.files?.[0]); e.target.value = ""; }} />
+        <button onClick={() => fileRef.current?.click()}
+                className="btn-tactile flex items-center gap-1.5 px-3 py-2 rounded-lg border-2 font-medium text-sm"
+                style={{ borderColor: "var(--accent)", color: "var(--accent-2)", background: "var(--accent-bg)" }}>
+          <Upload size={14} strokeWidth={2.5} />
+          選擇 CSV 檔
+        </button>
+        {fileName && <span className="num text-xs" style={{ color: "var(--ink-2)" }}>{fileName}</span>}
+      </div>
+
+      {parsed?.error && (
+        <div className="rounded-lg px-3 py-2 text-xs mb-3"
+             style={{ background: "var(--red-bg)", border: "1px solid var(--red)", color: "var(--red)" }}>
+          {parsed.error}
+        </div>
+      )}
+
+      {plan && (
+        <>
+          {/* 摘要 */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+            <SessionStatCard label="CSV 人數" v={parsed.entries.length} sub="人" />
+            <SessionStatCard label="對應成功" v={plan.matched.length} sub="人" color="var(--green)" />
+            <SessionStatCard label="有變動" v={plan.matched.filter(m => m.changed).length} sub="人" color="var(--amber)" />
+            <SessionStatCard label="對不到" v={plan.unmatched.length + plan.ambiguous.length} sub="人"
+                             color={plan.unmatched.length + plan.ambiguous.length > 0 ? "var(--red)" : "var(--mute)"} />
+          </div>
+
+          {/* 對不到 / 名單中缺的 */}
+          {(plan.unmatched.length > 0 || plan.ambiguous.length > 0) && (
+            <div className="rounded-lg px-3 py-2 text-xs mb-2"
+                 style={{ background: "var(--red-bg)", border: "1px solid var(--red)", color: "var(--red)" }}>
+              <div className="font-bold mb-0.5">CSV 有、名單對不到（不會更新）：</div>
+              <div>
+                {plan.unmatched.map(e => `${e.name}${e.num ? `(座${e.num})` : ""}`).join("、")}
+                {plan.ambiguous.length > 0 && (
+                  <span>{plan.unmatched.length > 0 ? "；" : ""}同名無法分辨：{plan.ambiguous.map(e => e.name).join("、")}</span>
+                )}
+              </div>
+            </div>
+          )}
+          {plan.notInCsv.length > 0 && (
+            <div className="rounded-lg px-3 py-2 text-xs mb-2"
+                 style={{ background: "var(--amber-bg)", border: "1px solid var(--amber)", color: "#5C4810" }}>
+              <div className="font-bold mb-0.5">名單有、CSV 沒有（維持原課表）：</div>
+              <div>{plan.notInCsv.map(p => p.name).join("、")}</div>
+            </div>
+          )}
+
+          {/* 預覽差異 */}
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="text-xs tk-l" style={{ color: "var(--mute)" }}>預覽</span>
+            <button onClick={() => setOnlyChanged(!onlyChanged)}
+                    className="btn-tactile text-xs px-2.5 py-1 rounded-full border"
+                    style={{
+                      borderColor: onlyChanged ? "var(--ink)" : "var(--line)",
+                      background: onlyChanged ? "var(--ink)" : "transparent",
+                      color: onlyChanged ? "var(--bg)" : "var(--ink-2)",
+                    }}>
+              只看有變動
+            </button>
+            <span className="text-[10px] ml-auto" style={{ color: "var(--mute)" }}>取消勾選可略過該人</span>
+          </div>
+          <div className="overflow-x-auto rounded-lg border mb-3" style={{ borderColor: "var(--line)" }}>
+            <table className="w-full text-xs" style={{ borderCollapse: "collapse", minWidth: 520 }}>
+              <thead>
+                <tr style={{ background: "var(--panel-2)", borderBottom: "2px solid var(--line-strong)" }}>
+                  <th style={{ padding: "6px 6px" }}></th>
+                  <th style={{ padding: "6px 6px", textAlign: "left" }}>隊員</th>
+                  <th style={{ padding: "6px 6px", textAlign: "left" }}>目前課表</th>
+                  <th style={{ padding: "6px 6px", textAlign: "left" }}>新課表</th>
+                  <th style={{ padding: "6px 6px", textAlign: "left" }}>變動</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.length === 0 && (
+                  <tr><td colSpan={5} className="text-center py-3" style={{ color: "var(--mute)" }}>
+                    {onlyChanged ? "沒有任何變動，課表已與 CSV 一致" : "沒有對應到的人"}
+                  </td></tr>
+                )}
+                {visible.map(m => {
+                  const off = !!excluded[m.person.seq];
+                  return (
+                    <tr key={m.person.seq}
+                        style={{ borderTop: "1px solid var(--line)", opacity: off ? 0.45 : 1,
+                                 background: m.changed ? "transparent" : "var(--panel-2)" }}>
+                      <td style={{ padding: "5px 6px", textAlign: "center" }}>
+                        {m.changed && (
+                          <input type="checkbox" checked={!off}
+                                 onChange={() => setExcluded(prev => ({ ...prev, [m.person.seq]: !off }))} />
+                        )}
+                      </td>
+                      <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>
+                        <span className="font-medium" style={{ color: "var(--ink)" }}>{m.person.name}</span>
+                        <span className="num ml-1" style={{ color: "var(--mute)" }}>{pad(m.person.seq)}</span>
+                      </td>
+                      <td className="num" style={{ padding: "5px 6px", color: "var(--mute)", whiteSpace: "nowrap" }}>{schSummary(m.oldSch)}</td>
+                      <td className="num" style={{ padding: "5px 6px", color: m.changed ? "var(--ink)" : "var(--mute)", fontWeight: m.changed ? 600 : 400, whiteSpace: "nowrap" }}>{schSummary(m.newSch)}</td>
+                      <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>
+                        {m.added.map(l => <span key={"+" + l} className="num mr-1" style={{ color: "var(--green)" }}>＋{l}</span>)}
+                        {m.removed.map(l => <span key={"-" + l} className="num mr-1" style={{ color: "var(--red)" }}>－{l}</span>)}
+                        {!m.changed && <span style={{ color: "var(--mute)" }}>—</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      <div className="flex gap-2 mt-2">
+        <button onClick={onCancel}
+                className="btn-tactile flex-1 py-2 rounded-md border-2 font-medium"
+                style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)" }}>
+          取消
+        </button>
+        <button onClick={() => onApply(toApply)} disabled={toApply.length === 0}
+                className="btn-tactile flex-1 py-2 rounded-md border-2 font-medium"
+                style={{
+                  borderColor: toApply.length > 0 ? "var(--accent)" : "var(--line)",
+                  background: toApply.length > 0 ? "var(--accent)" : "var(--line)",
+                  color: toApply.length > 0 ? "#fff" : "var(--mute)",
+                }}>
+          確認套用（{toApply.length} 人）
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
 function EditScheduleModal({ person, onSave, onCancel }) {
   const [sch, setSch] = useState([...person.sch]);
   const days = ["週一", "週二", "週三", "週四", "週五", "週六"];
@@ -7842,12 +8154,12 @@ function ConfirmDeleteModal({ person, onConfirm, onCancel }) {
   );
 }
 
-function ModalShell({ children, onClose }) {
+function ModalShell({ children, onClose, wide }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
          style={{ background: "rgba(20,18,16,0.55)" }}
          onClick={onClose}>
-      <div className="rounded-2xl p-5 sm:p-6 max-w-md w-full max-h-[90vh] overflow-y-auto"
+      <div className={`rounded-2xl p-5 sm:p-6 ${wide ? "max-w-3xl" : "max-w-md"} w-full max-h-[90vh] overflow-y-auto`}
            style={{ background: "var(--panel)", border: "2px solid var(--accent-2)" }}
            onClick={(e) => e.stopPropagation()}>
         {children}
