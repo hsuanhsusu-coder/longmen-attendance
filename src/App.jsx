@@ -4182,8 +4182,39 @@ const weekMondayOf = (ds) => {
   d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
   return toDateStr(d);
 };
-const fmt1 = (v) => (Number.isFinite(v) ? (Math.round(v * 10) / 10).toString() : "—");
+// 平均值一律無條件進位（整數）
+const fmt1 = (v) => (Number.isFinite(v) ? String(Math.ceil(v - 1e-9)) : "—");
 const fmtPct = (num, den) => (den > 0 ? Math.round((num / den) * 100) + "%" : "—");
+// 出席率顏色：≥80% 綠、60~79% 琥珀、<60% 紅
+const rateColor = (num, den) => {
+  if (!(den > 0)) return "var(--mute)";
+  const r = num / den;
+  return r >= 0.8 ? "var(--green)" : r >= 0.6 ? "var(--amber)" : "var(--red)";
+};
+// 星期×場次 表格的單一格：大字＝平均實到，小字＝表定 · 出席率
+function AvgCell({ g, bold }) {
+  const base = { padding: "6px 6px", textAlign: "center", verticalAlign: "middle" };
+  if (!g) return <td style={{ ...base, color: "var(--line-strong)" }}>—</td>;
+  if (g.n === 0) {
+    return (
+      <td style={base}>
+        <div className="text-[11px]" style={{ color: g.missing > 0 ? "var(--amber)" : "var(--mute)" }}>
+          {g.missing > 0 ? `未點名 ${g.missing} 場` : "尚無場次"}
+        </div>
+      </td>
+    );
+  }
+  return (
+    <td style={base}>
+      <div className="num font-bold" style={{ fontSize: bold ? 22 : 20, lineHeight: 1.1, color: "var(--green)" }}>
+        {fmt1(g.present / g.n)}
+      </div>
+      <div className="num text-[10px]" style={{ color: "var(--mute)" }}>
+        表定 {fmt1(g.sch / g.n)} · <span style={{ color: rateColor(g.present, g.sch), fontWeight: 600 }}>{fmtPct(g.present, g.sch)}</span>
+      </div>
+    </td>
+  );
+}
 
 function SessionStatCard({ label, v, sub, color, alert }) {
   return (
@@ -4261,6 +4292,7 @@ function SessionStatsSection({ currentRoster, deletedPersons, attendance, Y, M, 
   const [dowFilter, setDowFilter] = useState([]);      // [] = 全部；否則為 getDay() 值陣列
   const [trendUnit, setTrendUnit] = useState("week");  // week | month
   const [showDetail, setShowDetail] = useState(false);
+  const [showMissing, setShowMissing] = useState(false);
 
   // 月份切換時,同步預設區間為該月
   useEffect(() => { setStartDate(monthFirst); setEndDate(monthLast); setQuick("month"); }, [monthFirst, monthLast]);
@@ -4367,6 +4399,22 @@ function SessionStatsSection({ currentRoster, deletedPersons, attendance, Y, M, 
       (dowSortKey(a.dow) - dowSortKey(b.dow)) || (a.per === b.per ? 0 : a.per === "am" ? -1 : 1));
   }, [filtered]);
 
+  // 樞紐：一列一個星期，欄為早訓/午訓
+  const pivot = useMemo(() => {
+    const map = {};
+    groups.forEach(g => {
+      if (!map[g.dow]) map[g.dow] = { dow: g.dow, dayLabel: g.dayLabel };
+      map[g.dow][g.per] = g;
+    });
+    return Object.values(map).sort((a, b) => dowSortKey(a.dow) - dowSortKey(b.dow));
+  }, [groups]);
+  const perCols = perFilter === "all" ? ["am", "pm"] : [perFilter];
+  const perTotals = useMemo(() => {
+    const t = { am: { n: 0, present: 0, sch: 0, missing: 0 }, pm: { n: 0, present: 0, sch: 0, missing: 0 } };
+    groups.forEach(g => { t[g.per].n += g.n; t[g.per].present += g.present; t[g.per].sch += g.sch; t[g.per].missing += g.missing; });
+    return t;
+  }, [groups]);
+
   // 趨勢（週 / 月）
   const trend = useMemo(() => {
     const map = {};
@@ -4398,16 +4446,16 @@ function SessionStatsSection({ currentRoster, deletedPersons, attendance, Y, M, 
     const sum = groups.map(g => ({
       "星期": g.dayLabel, "場次": PERIOD_LABEL[g.per],
       "已點名場次": g.n, "實到總數": g.present, "表定總數": g.sch,
-      "每場平均實到": g.n > 0 ? Math.round((g.present / g.n) * 10) / 10 : "",
-      "每場平均表定": g.n > 0 ? Math.round((g.sch / g.n) * 10) / 10 : "",
+      "每場平均實到": g.n > 0 ? Math.ceil(g.present / g.n - 1e-9) : "",
+      "每場平均表定": g.n > 0 ? Math.ceil(g.sch / g.n - 1e-9) : "",
       "出席率": fmtPct(g.present, g.sch),
       "未點名場次": g.missing, "未來場次": g.upcoming,
     }));
     sum.push({
       "星期": "合計", "場次": perFilter === "all" ? "全部" : PERIOD_LABEL[perFilter],
       "已點名場次": totals.n, "實到總數": totals.present, "表定總數": totals.sch,
-      "每場平均實到": totals.n > 0 ? Math.round((totals.present / totals.n) * 10) / 10 : "",
-      "每場平均表定": totals.n > 0 ? Math.round((totals.sch / totals.n) * 10) / 10 : "",
+      "每場平均實到": totals.n > 0 ? Math.ceil(totals.present / totals.n - 1e-9) : "",
+      "每場平均表定": totals.n > 0 ? Math.ceil(totals.sch / totals.n - 1e-9) : "",
       "出席率": fmtPct(totals.present, totals.sch),
       "未點名場次": missing.length, "未來場次": upcoming.length,
     });
@@ -4418,8 +4466,8 @@ function SessionStatsSection({ currentRoster, deletedPersons, attendance, Y, M, 
     const tr = trend.map(b => ({
       [trendUnit === "week" ? "週（週一起）" : "月份"]: trendUnit === "week" ? b.key : b.key,
       "已點名場次": b.n, "實到總數": b.present, "表定總數": b.sch,
-      "每場平均實到": Math.round(b.avgPresent * 10) / 10,
-      "每場平均表定": Math.round(b.avgSch * 10) / 10,
+      "每場平均實到": Math.ceil(b.avgPresent - 1e-9),
+      "每場平均表定": Math.ceil(b.avgSch - 1e-9),
       "出席率": fmtPct(b.present, b.sch),
     }));
     const ws2 = XLSX.utils.json_to_sheet(tr);
@@ -4528,69 +4576,62 @@ function SessionStatsSection({ currentRoster, deletedPersons, attendance, Y, M, 
           ) : (
             <>
               {/* 合計卡 */}
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                <SessionStatCard label="已點名場次" v={totals.n} sub="場" />
-                <SessionStatCard label="實到總數" v={totals.present} sub="人次" color="var(--green)" />
-                <SessionStatCard label="每場平均實到" v={totals.n > 0 ? fmt1(totals.present / totals.n) : "—"} sub="人/場" color="var(--green)" />
-                <SessionStatCard label="出席率" v={fmtPct(totals.present, totals.sch)} sub={totals.n > 0 ? `表定均 ${fmt1(totals.sch / totals.n)}` : ""} />
-                <SessionStatCard label="未點名場次" v={missing.length} sub="場" color={missing.length > 0 ? "var(--amber)" : undefined} alert={missing.length > 0} />
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <SessionStatCard label="每場平均實到" v={totals.n > 0 ? fmt1(totals.present / totals.n) : "—"}
+                                 sub={totals.n > 0 ? `人 · 共 ${totals.n} 場` : ""} color="var(--green)" />
+                <SessionStatCard label="每場平均表定" v={totals.n > 0 ? fmt1(totals.sch / totals.n) : "—"} sub="人" />
+                <SessionStatCard label="出席率" v={fmtPct(totals.present, totals.sch)} sub="實到÷表定" color={rateColor(totals.present, totals.sch)} />
+                <SessionStatCard label="未點名場次" v={missing.length} sub="場（未計入）"
+                                 color={missing.length > 0 ? "var(--amber)" : "var(--mute)"} alert={missing.length > 0} />
               </div>
 
-              {/* 未點名提醒 */}
+              {/* 未點名提醒（可收合） */}
               {missing.length > 0 && (
-                <div className="rounded-lg px-3 py-2 text-xs"
+                <div className="rounded-lg overflow-hidden"
                      style={{ background: "var(--amber-bg)", border: "1px solid var(--amber)", color: "#5C4810" }}>
-                  <div className="font-bold mb-1">⚠ 以下 {missing.length} 場已過期但尚未點名（未計入平均），點一下可前往補點：</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {missing.map(x => (
-                      <button key={x.key} onClick={() => goToDay(x.dateStr)}
-                              className="btn-tactile num px-2 py-0.5 rounded border text-[11px]"
-                              style={{ background: "var(--panel)", borderColor: "var(--amber)", color: "#5C4810" }}>
-                        {+x.dateStr.slice(5, 7)}/{+x.dateStr.slice(8, 10)} {x.dayLabel} {PERIOD_LABEL[x.per]}
-                      </button>
-                    ))}
-                  </div>
+                  <button onClick={() => setShowMissing(!showMissing)}
+                          className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold text-left">
+                    <span>⚠ {missing.length} 場已過期但尚未點名</span>
+                    <span style={{ fontWeight: 400 }}>{showMissing ? "收合 ▲" : "展開補點 ▼"}</span>
+                  </button>
+                  {showMissing && (
+                    <div className="flex flex-wrap gap-1.5 px-3 pb-2.5">
+                      {missing.map(x => (
+                        <button key={x.key} onClick={() => goToDay(x.dateStr)}
+                                className="btn-tactile num px-2 py-0.5 rounded border text-[11px]"
+                                style={{ background: "var(--panel)", borderColor: "var(--amber)", color: "#5C4810" }}>
+                          {+x.dateStr.slice(5, 7)}/{+x.dateStr.slice(8, 10)} {x.dayLabel} {PERIOD_LABEL[x.per]}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* 星期 × 場次 彙總表 */}
-              <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "var(--line)" }}>
-                <table className="w-full text-xs" style={{ borderCollapse: "collapse", minWidth: 480 }}>
+              {/* 星期 × 場次 平均實到 */}
+              <div className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--line)" }}>
+                <table className="w-full" style={{ borderCollapse: "collapse" }}>
                   <thead>
-                    <tr style={{ background: "var(--ink)", color: "var(--bg)" }}>
-                      <th style={{ ...th, textAlign: "left" }}>星期</th>
-                      <th style={th}>場次</th>
-                      <th style={th}>已點名<br/>場次</th>
-                      <th style={th}>實到<br/>總數</th>
-                      <th style={th}>每場<br/>平均實到</th>
-                      <th style={th}>每場<br/>平均表定</th>
-                      <th style={th}>出席率</th>
-                      <th style={th}>未點名</th>
+                    <tr style={{ background: "var(--panel-2)", borderBottom: "2px solid var(--line-strong)" }}>
+                      <th className="text-xs tk-l" style={{ padding: "8px 10px", textAlign: "left", color: "var(--mute)", fontWeight: 600 }}>星期</th>
+                      {perCols.map(per => (
+                        <th key={per} className="text-xs" style={{ padding: "8px 6px", color: "var(--ink)", fontWeight: 700 }}>
+                          {per === "am" ? "☀ 早訓" : "☾ 午訓"}
+                          <div className="text-[9px] font-normal" style={{ color: "var(--mute)" }}>平均實到 · 表定 · 出席率</div>
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {groups.map(g => (
-                      <tr key={g.key} style={{ borderTop: "1px solid var(--line)" }}>
-                        <td style={{ ...td, textAlign: "left", color: "var(--ink)", fontWeight: 600 }}>{g.dayLabel}</td>
-                        <td style={{ ...td, color: "var(--ink-2)" }}>{PERIOD_LABEL[g.per]}</td>
-                        <td className="num" style={td}>{g.n}</td>
-                        <td className="num" style={{ ...td, color: "var(--green)", fontWeight: 700 }}>{g.present}</td>
-                        <td className="num" style={{ ...td, color: "var(--green)", fontWeight: 700 }}>{g.n > 0 ? fmt1(g.present / g.n) : "—"}</td>
-                        <td className="num" style={td}>{g.n > 0 ? fmt1(g.sch / g.n) : "—"}</td>
-                        <td className="num" style={td}>{fmtPct(g.present, g.sch)}</td>
-                        <td className="num" style={{ ...td, color: g.missing > 0 ? "var(--amber)" : "var(--mute)", fontWeight: g.missing > 0 ? 700 : 400 }}>
-                          {g.missing > 0 ? g.missing : "–"}
-                        </td>
+                    {pivot.map((row, i) => (
+                      <tr key={row.dow} style={{ borderTop: "1px solid var(--line)", background: i % 2 ? "var(--panel-2)" : "transparent" }}>
+                        <td className="display-cn text-sm" style={{ padding: "8px 10px", color: "var(--ink)" }}>{row.dayLabel}</td>
+                        {perCols.map(per => <AvgCell key={per} g={row[per]} />)}
                       </tr>
                     ))}
-                    <tr style={{ borderTop: "2px solid var(--ink)", background: "var(--panel-2)", fontWeight: 700 }}>
-                      <td style={{ ...td, textAlign: "left" }} colSpan={2}>合計</td>
-                      <td className="num" style={td}>{totals.n}</td>
-                      <td className="num" style={{ ...td, color: "var(--green)" }}>{totals.present}</td>
-                      <td className="num" style={{ ...td, color: "var(--green)" }}>{totals.n > 0 ? fmt1(totals.present / totals.n) : "—"}</td>
-                      <td className="num" style={td}>{totals.n > 0 ? fmt1(totals.sch / totals.n) : "—"}</td>
-                      <td className="num" style={td}>{fmtPct(totals.present, totals.sch)}</td>
-                      <td className="num" style={{ ...td, color: missing.length > 0 ? "var(--amber)" : "var(--mute)" }}>{missing.length > 0 ? missing.length : "–"}</td>
+                    <tr style={{ borderTop: "2px solid var(--ink)", background: "var(--panel-2)" }}>
+                      <td className="display-cn text-sm" style={{ padding: "8px 10px", color: "var(--ink)" }}>合計</td>
+                      {perCols.map(per => <AvgCell key={per} g={perTotals[per]} bold />)}
                     </tr>
                   </tbody>
                 </table>
