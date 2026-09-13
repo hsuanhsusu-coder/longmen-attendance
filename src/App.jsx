@@ -3978,7 +3978,185 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS,
                           }} />
         ))}
       </section>
+
+      {/* 日期區間統計（每天表定/實到人數） */}
+      <RangeStatsSection currentRoster={currentRoster} deletedPersons={deletedPersons}
+                         attendance={attendance} Y={Y} M={M} />
     </div>
+  );
+}
+
+// === 日期區間統計：每天的登記（表定）與實際出席人數 ===
+function RangeStatsSection({ currentRoster, deletedPersons, attendance, Y, M }) {
+  const [expanded, setExpanded] = useState(false);
+  const monthFirst = `${Y}-${pad(M + 1)}-01`;
+  const monthLast = `${Y}-${pad(M + 1)}-${pad(new Date(Y, M + 1, 0).getDate())}`;
+  const [startDate, setStartDate] = useState(monthFirst);
+  const [endDate, setEndDate] = useState(monthLast);
+
+  // 月份切換時,同步預設區間
+  useEffect(() => { setStartDate(monthFirst); setEndDate(monthLast); }, [monthFirst, monthLast]);
+
+  const rows = useMemo(() => {
+    if (!startDate || !endDate || startDate > endDate) return [];
+    // 防呆:最多 185 天
+    const s = fromDateStr(startDate), e = fromDateStr(endDate);
+    if ((e - s) / 86400000 > 185) return [];
+    const rosterCache = {};  // "Y-M" → 有效名單（含當月仍在隊的畢業生）
+    const out = [];
+    const cur = new Date(s);
+    while (cur <= e) {
+      const ds = toDateStr(cur);
+      const info = getDateInfo(ds);
+      if (!info.off) {
+        const { Y: dy, M: dm } = monthFromDate(ds);
+        const ck = dy + "-" + dm;
+        if (!rosterCache[ck]) rosterCache[ck] = withGraduated(currentRoster, deletedPersons, dy, dm);
+        const dayRoster = rosterCache[ck];
+        const dayData = attendance[ds] || {};
+        const row = { dateStr: ds, dayLabel: info.dayLabel };
+        ["am", "pm"].forEach(per => {
+          const idx = per === "am" ? info.amIdx : info.pmIdx;
+          const slot = dayData[per] || {};
+          let sch = 0, present = 0;
+          dayRoster.forEach(p => {
+            if (getSch(attendance, ds, p, idx)) sch++;
+            if (slot[p.seq] === "present") present++;
+          });
+          row[per + "Sch"] = sch;
+          row[per + "Present"] = present;
+          row[per + "Venue"] = VENUES[getVenue(attendance, ds, per)]?.label || "";
+        });
+        out.push(row);
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+    return out;
+  }, [startDate, endDate, currentRoster, deletedPersons, attendance]);
+
+  const totals = useMemo(() => rows.reduce((a, r) => ({
+    amSch: a.amSch + r.amSch, amPresent: a.amPresent + r.amPresent,
+    pmSch: a.pmSch + r.pmSch, pmPresent: a.pmPresent + r.pmPresent,
+  }), { amSch: 0, amPresent: 0, pmSch: 0, pmPresent: 0 }), [rows]);
+
+  const exportRange = () => {
+    const data = rows.map(r => ({
+      "日期": r.dateStr, "星期": r.dayLabel,
+      "早訓場地": r.amVenue, "早訓登記": r.amSch, "早訓實到": r.amPresent,
+      "午訓場地": r.pmVenue, "午訓登記": r.pmSch, "午訓實到": r.pmPresent,
+      "全日登記": r.amSch + r.pmSch, "全日實到": r.amPresent + r.pmPresent,
+    }));
+    data.push({
+      "日期": "合計", "星期": "",
+      "早訓場地": "", "早訓登記": totals.amSch, "早訓實到": totals.amPresent,
+      "午訓場地": "", "午訓登記": totals.pmSch, "午訓實到": totals.pmPresent,
+      "全日登記": totals.amSch + totals.pmSch, "全日實到": totals.amPresent + totals.pmPresent,
+    });
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(data);
+    ws["!cols"] = [{ wch: 12 }, { wch: 6 }, { wch: 8 }, { wch: 9 }, { wch: 9 }, { wch: 8 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 9 }];
+    XLSX.utils.book_append_sheet(wb, ws, "區間出席統計");
+    XLSX.writeFile(wb, `出席統計_${startDate}_${endDate}.xlsx`);
+  };
+
+  return (
+    <section className="rounded-2xl border-2 overflow-hidden"
+             style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
+      <button onClick={() => setExpanded(!expanded)}
+              className="w-full flex items-center justify-between px-4 py-3 text-left">
+        <div className="flex items-center gap-2">
+          <CalendarDays size={16} strokeWidth={2.5} style={{ color: "var(--accent-2)" }} />
+          <span className="display-cn text-base" style={{ color: "var(--ink)" }}>
+            📆 日期區間統計
+          </span>
+          <span className="text-[10px]" style={{ color: "var(--mute)" }}>
+            每天登記 vs 實到人數
+          </span>
+        </div>
+        <span style={{ color: "var(--mute)" }}>{expanded ? "▲" : "▼"}</span>
+      </button>
+
+      {expanded && (
+        <div className="px-3 pb-3 sm:px-4 sm:pb-4">
+          {/* 日期選擇 */}
+          <div className="flex items-center gap-2 flex-wrap mb-3">
+            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                   className="num px-2 py-1.5 rounded-md border-2 text-sm"
+                   style={{ borderColor: "var(--line-strong)", background: "var(--bg)" }} />
+            <span style={{ color: "var(--mute)" }}>～</span>
+            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                   className="num px-2 py-1.5 rounded-md border-2 text-sm"
+                   style={{ borderColor: "var(--line-strong)", background: "var(--bg)" }} />
+            <button onClick={exportRange} disabled={rows.length === 0}
+                    className="btn-tactile ml-auto px-3 py-1.5 rounded-md text-xs font-medium"
+                    style={{
+                      background: rows.length > 0 ? "var(--ink)" : "var(--line)",
+                      color: rows.length > 0 ? "var(--bg)" : "var(--mute)",
+                    }}>
+              ⬇ 匯出此區間
+            </button>
+          </div>
+
+          {startDate > endDate ? (
+            <div className="text-center py-4 text-sm" style={{ color: "var(--red)" }}>
+              結束日期不能早於開始日期
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="text-center py-4 text-sm" style={{ color: "var(--mute)" }}>
+              此區間沒有訓練日（或區間超過 185 天）
+            </div>
+          ) : (
+            <>
+              {/* 合計卡 */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                <MiniStat label="早訓登記" v={totals.amSch} sub="人次" />
+                <MiniStat label="早訓實到" v={totals.amPresent} sub="人次" color="var(--green)" />
+                <MiniStat label="午訓登記" v={totals.pmSch} sub="人次" />
+                <MiniStat label="午訓實到" v={totals.pmPresent} sub="人次" color="var(--green)" />
+              </div>
+
+              {/* 每日表格 */}
+              <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "var(--line)" }}>
+                <table className="w-full text-xs" style={{ borderCollapse: "collapse", minWidth: 420 }}>
+                  <thead>
+                    <tr style={{ background: "var(--ink)", color: "var(--bg)" }}>
+                      <th style={{ padding: "6px 8px", textAlign: "left" }}>日期</th>
+                      <th style={{ padding: "6px 4px" }}>星期</th>
+                      <th style={{ padding: "6px 4px" }}>早訓<br/>登記</th>
+                      <th style={{ padding: "6px 4px" }}>早訓<br/>實到</th>
+                      <th style={{ padding: "6px 4px" }}>午訓<br/>登記</th>
+                      <th style={{ padding: "6px 4px" }}>午訓<br/>實到</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map(r => (
+                      <tr key={r.dateStr} style={{ borderTop: "1px solid var(--line)" }}>
+                        <td className="num" style={{ padding: "5px 8px", color: "var(--ink)" }}>{r.dateStr.slice(5)}</td>
+                        <td style={{ padding: "5px 4px", textAlign: "center", color: "var(--ink-2)" }}>{r.dayLabel}</td>
+                        <td className="num" style={{ padding: "5px 4px", textAlign: "center" }}>{r.amSch}</td>
+                        <td className="num" style={{ padding: "5px 4px", textAlign: "center", color: "var(--green)", fontWeight: 700 }}>{r.amPresent}</td>
+                        <td className="num" style={{ padding: "5px 4px", textAlign: "center" }}>{r.pmSch}</td>
+                        <td className="num" style={{ padding: "5px 4px", textAlign: "center", color: "var(--green)", fontWeight: 700 }}>{r.pmPresent}</td>
+                      </tr>
+                    ))}
+                    <tr style={{ borderTop: "2px solid var(--ink)", background: "var(--panel-2)", fontWeight: 700 }}>
+                      <td style={{ padding: "6px 8px" }} colSpan={2}>合計</td>
+                      <td className="num" style={{ padding: "6px 4px", textAlign: "center" }}>{totals.amSch}</td>
+                      <td className="num" style={{ padding: "6px 4px", textAlign: "center", color: "var(--green)" }}>{totals.amPresent}</td>
+                      <td className="num" style={{ padding: "6px 4px", textAlign: "center" }}>{totals.pmSch}</td>
+                      <td className="num" style={{ padding: "6px 4px", textAlign: "center", color: "var(--green)" }}>{totals.pmPresent}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div className="text-[10px] mt-1.5" style={{ color: "var(--mute)" }}>
+                登記＝表定出席（含補訓調整後的表定）；實到＝實際點名為出席（含補訓）。跨月區間會自動計入當時仍在隊的畢業生。
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
