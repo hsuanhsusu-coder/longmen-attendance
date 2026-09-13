@@ -3982,6 +3982,13 @@ function MonthlyView({ attendance, setSelectedDate, setTab, Y, M, TRAINING_DAYS,
       {/* 日期區間統計（每天表定/實到人數） */}
       <RangeStatsSection currentRoster={currentRoster} deletedPersons={deletedPersons}
                          attendance={attendance} Y={Y} M={M} />
+
+      {/* 場次統計：星期×早午訓 平均、週/月趨勢、未點名提醒（僅管理員） */}
+      {isAdmin && (
+        <SessionStatsSection currentRoster={currentRoster} deletedPersons={deletedPersons}
+                             attendance={attendance} Y={Y} M={M}
+                             setSelectedDate={setSelectedDate} setTab={setTab} />
+      )}
     </div>
   );
 }
@@ -4151,6 +4158,507 @@ function RangeStatsSection({ currentRoster, deletedPersons, attendance, Y, M }) 
               </div>
               <div className="text-[10px] mt-1.5" style={{ color: "var(--mute)" }}>
                 登記＝表定出席（含補訓調整後的表定）；實到＝實際點名為出席（含補訓）。跨月區間會自動計入當時仍在隊的畢業生。
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// === 場次統計：星期 × 場次（早/午）彙總、週/月趨勢、未點名提醒（僅管理員） ===
+// 規則：
+//  - 只算「表定訓練場次」：當天非停練、該時段場地非 closed、且（有人表定 或 已有人點名）
+//  - 只計「已點名」場次（該場至少有一人被標出席/未到）；未點名且日期已過 → 列入「未點名提醒」
+//  - 跨月區間自動計入當時仍在隊的畢業生（同日期區間統計）
+const PERIOD_LABEL = { am: "早訓", pm: "午訓" };
+const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];          // 週一 … 週六、週日
+const dowSortKey = (dow) => (dow === 0 ? 7 : dow);
+// 該日期所在週的週一（週一 ~ 週日為一週）
+const weekMondayOf = (ds) => {
+  const d = fromDateStr(ds);
+  const dow = d.getDay();
+  d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
+  return toDateStr(d);
+};
+const fmt1 = (v) => (Number.isFinite(v) ? (Math.round(v * 10) / 10).toString() : "—");
+const fmtPct = (num, den) => (den > 0 ? Math.round((num / den) * 100) + "%" : "—");
+
+function SessionStatCard({ label, v, sub, color, alert }) {
+  return (
+    <div className="rounded-lg border px-2.5 py-2"
+         style={{ background: "var(--panel-2)", borderColor: alert ? "var(--amber)" : "var(--line)" }}>
+      <div className="text-[10px] tk-l" style={{ color: "var(--mute)" }}>{label}</div>
+      <div className="flex items-baseline gap-1">
+        <span className="num text-xl sm:text-2xl font-bold" style={{ color: color || "var(--ink)" }}>{v}</span>
+        {sub && <span className="num text-[10px]" style={{ color: "var(--mute)" }}>{sub}</span>}
+      </div>
+    </div>
+  );
+}
+
+// 趨勢圖（inline SVG，不依賴額外套件）：實線＝每場平均實到、虛線＝每場平均表定
+function SessionTrendChart({ data, unitLabel }) {
+  if (!data || data.length === 0) return null;
+  const W = Math.max(340, data.length * 56 + 70), H = 200;
+  const padL = 36, padR = 18, padT = 26, padB = 40;
+  const innerW = W - padL - padR, innerH = H - padT - padB;
+  const maxV = Math.max(1, ...data.map(d => Math.max(d.avgSch, d.avgPresent)));
+  const yMax = Math.max(5, Math.ceil(maxV / 5) * 5);
+  const xOf = (i) => (data.length === 1 ? padL + innerW / 2 : padL + (innerW * i) / (data.length - 1));
+  const yOf = (v) => padT + innerH - (v / yMax) * innerH;
+  const pathOf = (key) => data.map((d, i) => `${i === 0 ? "M" : "L"}${xOf(i).toFixed(1)},${yOf(d[key]).toFixed(1)}`).join(" ");
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(f => Math.round(yMax * f));
+  return (
+    <div className="overflow-x-auto">
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ display: "block", width: "100%", minWidth: W, height: "auto" }}>
+        {/* 格線 + Y 軸 */}
+        {ticks.map(t => (
+          <g key={t}>
+            <line x1={padL} x2={W - padR} y1={yOf(t)} y2={yOf(t)} stroke="var(--line)" strokeWidth="1" />
+            <text x={padL - 6} y={yOf(t) + 3.5} fontSize="10" textAnchor="end" fill="var(--mute)"
+                  fontFamily="JetBrains Mono, ui-monospace, monospace">{t}</text>
+          </g>
+        ))}
+        {/* 圖例 */}
+        <g fontSize="10" fill="var(--ink-2)">
+          <line x1={W - padR - 150} x2={W - padR - 128} y1={12} y2={12} stroke="var(--green-2)" strokeWidth="2.5" />
+          <text x={W - padR - 124} y={15.5}>平均實到</text>
+          <line x1={W - padR - 70} x2={W - padR - 48} y1={12} y2={12} stroke="var(--mute)" strokeWidth="2" strokeDasharray="5 4" />
+          <text x={W - padR - 44} y={15.5}>平均表定</text>
+        </g>
+        {/* 折線 */}
+        <path d={pathOf("avgSch")} fill="none" stroke="var(--mute)" strokeWidth="2" strokeDasharray="5 4" />
+        <path d={pathOf("avgPresent")} fill="none" stroke="var(--green-2)" strokeWidth="2.5" strokeLinejoin="round" />
+        {/* 點 + 數值 + X 軸標籤 */}
+        {data.map((d, i) => (
+          <g key={d.key}>
+            <circle cx={xOf(i)} cy={yOf(d.avgSch)} r="3" fill="var(--panel)" stroke="var(--mute)" strokeWidth="1.5" />
+            <circle cx={xOf(i)} cy={yOf(d.avgPresent)} r="4" fill="var(--green-2)" />
+            <text x={xOf(i)} y={yOf(d.avgPresent) - 8} fontSize="10" textAnchor="middle" fontWeight="700"
+                  fill="var(--green)" fontFamily="JetBrains Mono, ui-monospace, monospace">{fmt1(d.avgPresent)}</text>
+            <text x={xOf(i)} y={H - padB + 14} fontSize="10" textAnchor="middle" fill="var(--ink-2)"
+                  fontFamily="JetBrains Mono, ui-monospace, monospace">{d.label}</text>
+            <text x={xOf(i)} y={H - padB + 26} fontSize="9" textAnchor="middle" fill="var(--mute)">{d.n} 場</text>
+          </g>
+        ))}
+        <text x={padL} y={H - 4} fontSize="9" fill="var(--mute)">X 軸：{unitLabel}（下方為已點名場次數）；Y 軸：每場平均人數</text>
+      </svg>
+    </div>
+  );
+}
+
+function SessionStatsSection({ currentRoster, deletedPersons, attendance, Y, M, setSelectedDate, setTab }) {
+  const [expanded, setExpanded] = useState(false);
+  const todayStr = toDateStr(new Date());
+  const monthFirst = `${Y}-${pad(M + 1)}-01`;
+  const monthLast = `${Y}-${pad(M + 1)}-${pad(new Date(Y, M + 1, 0).getDate())}`;
+  const [startDate, setStartDate] = useState(monthFirst);
+  const [endDate, setEndDate] = useState(monthLast);
+  const [quick, setQuick] = useState("month");
+  const [perFilter, setPerFilter] = useState("all");   // all | am | pm
+  const [dowFilter, setDowFilter] = useState([]);      // [] = 全部；否則為 getDay() 值陣列
+  const [trendUnit, setTrendUnit] = useState("week");  // week | month
+  const [showDetail, setShowDetail] = useState(false);
+
+  // 月份切換時,同步預設區間為該月
+  useEffect(() => { setStartDate(monthFirst); setEndDate(monthLast); setQuick("month"); }, [monthFirst, monthLast]);
+
+  const prev = shiftMonth(Y, M, -1);
+  const quickPicks = [
+    { k: "week", l: "本週" },
+    { k: "month", l: `${M + 1}月` },
+    { k: "lastMonth", l: `${prev.M + 1}月` },
+    { k: "3m", l: "近 3 個月" },
+    { k: "semester", l: "本學期" },
+  ];
+  const applyQuick = (k) => {
+    const t = new Date();
+    let s, e;
+    if (k === "week") {
+      s = fromDateStr(weekMondayOf(todayStr));
+      e = new Date(s); e.setDate(s.getDate() + 6);
+    } else if (k === "month") {
+      s = new Date(Y, M, 1); e = new Date(Y, M + 1, 0);
+    } else if (k === "lastMonth") {
+      s = new Date(prev.Y, prev.M, 1); e = new Date(prev.Y, prev.M + 1, 0);
+    } else if (k === "3m") {
+      s = new Date(t.getFullYear(), t.getMonth() - 2, 1); e = t;
+    } else if (k === "semester") {
+      const m = t.getMonth();
+      if (m >= 7) { s = new Date(t.getFullYear(), 7, 1); e = new Date(t.getFullYear() + 1, 0, 31); }
+      else if (m === 0) { s = new Date(t.getFullYear() - 1, 7, 1); e = new Date(t.getFullYear(), 0, 31); }
+      else { s = new Date(t.getFullYear(), 1, 1); e = new Date(t.getFullYear(), 6, 31); }
+    }
+    setStartDate(toDateStr(s)); setEndDate(toDateStr(e)); setQuick(k);
+  };
+  const setStart = (v) => { setStartDate(v); setQuick(null); };
+  const setEnd = (v) => { setEndDate(v); setQuick(null); };
+
+  // 所有表定場次（早/午各一筆）
+  const sessions = useMemo(() => {
+    if (!startDate || !endDate || startDate > endDate) return [];
+    const s = fromDateStr(startDate), e = fromDateStr(endDate);
+    if ((e - s) / 86400000 > 400) return [];   // 防呆:最多 400 天（約一學年）
+    const rosterCache = {};
+    const out = [];
+    const cur = new Date(s);
+    while (cur <= e) {
+      const ds = toDateStr(cur);
+      const info = getDateInfo(ds);
+      if (!info.off) {
+        const { Y: dy, M: dm } = monthFromDate(ds);
+        const ck = dy + "-" + dm;
+        if (!rosterCache[ck]) rosterCache[ck] = withGraduated(currentRoster, deletedPersons, dy, dm);
+        const dayRoster = rosterCache[ck];
+        const dayData = attendance[ds] || {};
+        ["am", "pm"].forEach(per => {
+          const venueId = getVenue(attendance, ds, per);
+          if (venueId === "closed") return;          // 停練不算表定場次
+          const idx = per === "am" ? info.amIdx : info.pmIdx;
+          const slot = dayData[per] || {};
+          let sch = 0, present = 0, absent = 0;
+          dayRoster.forEach(p => {
+            if (getSch(attendance, ds, p, idx)) sch++;
+            const v = slot[p.seq];
+            if (v === "present") present++;
+            else if (v === "absent") absent++;
+          });
+          const taken = present + absent > 0;
+          if (sch === 0 && !taken) return;           // 沒人表定也沒人點 → 不算場次
+          out.push({
+            key: ds + "-" + per, dateStr: ds, per, dow: info.dow, dayLabel: info.dayLabel,
+            venue: VENUES[venueId]?.label || "", sch, present, absent, taken,
+            isPast: ds < todayStr, isToday: ds === todayStr,
+          });
+        });
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+    return out;
+  }, [startDate, endDate, currentRoster, deletedPersons, attendance, todayStr]);
+
+  // 套用篩選（場次 / 星期）
+  const filtered = useMemo(() => sessions.filter(x =>
+    (perFilter === "all" || x.per === perFilter) &&
+    (dowFilter.length === 0 || dowFilter.includes(x.dow))
+  ), [sessions, perFilter, dowFilter]);
+  const counted = useMemo(() => filtered.filter(x => x.taken), [filtered]);
+  const missing = useMemo(() => filtered.filter(x => !x.taken && x.isPast), [filtered]);
+  const upcoming = useMemo(() => filtered.filter(x => !x.taken && !x.isPast), [filtered]);
+
+  const totals = useMemo(() => counted.reduce((a, x) => ({
+    n: a.n + 1, present: a.present + x.present, sch: a.sch + x.sch,
+  }), { n: 0, present: 0, sch: 0 }), [counted]);
+
+  // 星期 × 場次 彙總
+  const groups = useMemo(() => {
+    const map = {};
+    filtered.forEach(x => {
+      const k = `${x.dow}-${x.per}`;
+      if (!map[k]) map[k] = { key: k, dow: x.dow, dayLabel: x.dayLabel, per: x.per, n: 0, present: 0, sch: 0, missing: 0, upcoming: 0 };
+      const g = map[k];
+      if (x.taken) { g.n++; g.present += x.present; g.sch += x.sch; }
+      else if (x.isPast) g.missing++;
+      else g.upcoming++;
+    });
+    return Object.values(map).sort((a, b) =>
+      (dowSortKey(a.dow) - dowSortKey(b.dow)) || (a.per === b.per ? 0 : a.per === "am" ? -1 : 1));
+  }, [filtered]);
+
+  // 趨勢（週 / 月）
+  const trend = useMemo(() => {
+    const map = {};
+    counted.forEach(x => {
+      const k = trendUnit === "week" ? weekMondayOf(x.dateStr) : x.dateStr.slice(0, 7);
+      if (!map[k]) map[k] = { key: k, n: 0, present: 0, sch: 0 };
+      map[k].n++; map[k].present += x.present; map[k].sch += x.sch;
+    });
+    return Object.values(map).sort((a, b) => a.key.localeCompare(b.key)).map(b => ({
+      ...b,
+      avgPresent: b.present / b.n,
+      avgSch: b.sch / b.n,
+      label: trendUnit === "week" ? `${+b.key.slice(5, 7)}/${+b.key.slice(8, 10)}` : `${+b.key.slice(0, 4)}/${+b.key.slice(5, 7)}`,
+    }));
+  }, [counted, trendUnit]);
+
+  // 區間內出現過的星期（給篩選 chip 用）
+  const dowsInRange = useMemo(() => {
+    const set = new Set(sessions.map(x => x.dow));
+    return DOW_ORDER.filter(d => set.has(d));
+  }, [sessions]);
+  const toggleDow = (d) => setDowFilter(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]);
+
+  const goToDay = (ds) => { setSelectedDate(ds); setTab("daily"); };
+
+  const exportSessions = () => {
+    const wb = XLSX.utils.book_new();
+    // Sheet 1: 星期×場次彙總
+    const sum = groups.map(g => ({
+      "星期": g.dayLabel, "場次": PERIOD_LABEL[g.per],
+      "已點名場次": g.n, "實到總數": g.present, "表定總數": g.sch,
+      "每場平均實到": g.n > 0 ? Math.round((g.present / g.n) * 10) / 10 : "",
+      "每場平均表定": g.n > 0 ? Math.round((g.sch / g.n) * 10) / 10 : "",
+      "出席率": fmtPct(g.present, g.sch),
+      "未點名場次": g.missing, "未來場次": g.upcoming,
+    }));
+    sum.push({
+      "星期": "合計", "場次": perFilter === "all" ? "全部" : PERIOD_LABEL[perFilter],
+      "已點名場次": totals.n, "實到總數": totals.present, "表定總數": totals.sch,
+      "每場平均實到": totals.n > 0 ? Math.round((totals.present / totals.n) * 10) / 10 : "",
+      "每場平均表定": totals.n > 0 ? Math.round((totals.sch / totals.n) * 10) / 10 : "",
+      "出席率": fmtPct(totals.present, totals.sch),
+      "未點名場次": missing.length, "未來場次": upcoming.length,
+    });
+    const ws1 = XLSX.utils.json_to_sheet(sum);
+    ws1["!cols"] = [{ wch: 6 }, { wch: 6 }, { wch: 11 }, { wch: 9 }, { wch: 9 }, { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 11 }, { wch: 9 }];
+    XLSX.utils.book_append_sheet(wb, ws1, "星期×場次彙總");
+    // Sheet 2: 趨勢
+    const tr = trend.map(b => ({
+      [trendUnit === "week" ? "週（週一起）" : "月份"]: trendUnit === "week" ? b.key : b.key,
+      "已點名場次": b.n, "實到總數": b.present, "表定總數": b.sch,
+      "每場平均實到": Math.round(b.avgPresent * 10) / 10,
+      "每場平均表定": Math.round(b.avgSch * 10) / 10,
+      "出席率": fmtPct(b.present, b.sch),
+    }));
+    const ws2 = XLSX.utils.json_to_sheet(tr);
+    ws2["!cols"] = [{ wch: 12 }, { wch: 11 }, { wch: 9 }, { wch: 9 }, { wch: 12 }, { wch: 12 }, { wch: 8 }];
+    XLSX.utils.book_append_sheet(wb, ws2, trendUnit === "week" ? "週趨勢" : "月趨勢");
+    // Sheet 3: 場次明細
+    const det = filtered.map(x => ({
+      "日期": x.dateStr, "星期": x.dayLabel, "場次": PERIOD_LABEL[x.per], "場地": x.venue,
+      "表定": x.sch, "實到": x.present, "未到": x.absent,
+      "出席率": x.taken ? fmtPct(x.present, x.sch) : "",
+      "狀態": x.taken ? "已點名" : x.isPast ? "未點名" : x.isToday ? "今天" : "未來",
+    }));
+    const ws3 = XLSX.utils.json_to_sheet(det);
+    ws3["!cols"] = [{ wch: 12 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 8 }, { wch: 8 }];
+    XLSX.utils.book_append_sheet(wb, ws3, "場次明細");
+    // Sheet 4: 未點名場次
+    if (missing.length > 0) {
+      const ws4 = XLSX.utils.json_to_sheet(missing.map(x => ({
+        "日期": x.dateStr, "星期": x.dayLabel, "場次": PERIOD_LABEL[x.per], "場地": x.venue, "表定人數": x.sch,
+      })));
+      ws4["!cols"] = [{ wch: 12 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 9 }];
+      XLSX.utils.book_append_sheet(wb, ws4, "未點名場次");
+    }
+    XLSX.writeFile(wb, `場次統計_${startDate}_${endDate}.xlsx`);
+  };
+
+  const chip = (active, onClick, label, key) => (
+    <button key={key} onClick={onClick}
+            className="btn-tactile text-xs px-2.5 py-1 rounded-full border"
+            style={{
+              borderColor: active ? "var(--ink)" : "var(--line)",
+              background: active ? "var(--ink)" : "transparent",
+              color: active ? "var(--bg)" : "var(--ink-2)",
+            }}>
+      {label}
+    </button>
+  );
+
+  const th = { padding: "6px 6px", whiteSpace: "nowrap" };
+  const td = { padding: "5px 6px", textAlign: "center" };
+
+  return (
+    <section className="rounded-2xl border-2 overflow-hidden"
+             style={{ background: "var(--panel)", borderColor: "var(--line)" }}>
+      <button onClick={() => setExpanded(!expanded)}
+              className="w-full flex items-center justify-between px-4 py-3 text-left">
+        <div className="flex items-center gap-2">
+          <BarChart3 size={16} strokeWidth={2.5} style={{ color: "var(--accent-2)" }} />
+          <span className="display-cn text-base" style={{ color: "var(--ink)" }}>
+            📊 場次統計
+          </span>
+          <span className="text-[10px]" style={{ color: "var(--mute)" }}>
+            星期×早午訓 平均與趨勢（管理員）
+          </span>
+        </div>
+        <span style={{ color: "var(--mute)" }}>{expanded ? "▲" : "▼"}</span>
+      </button>
+
+      {expanded && (
+        <div className="px-3 pb-3 sm:px-4 sm:pb-4 space-y-3">
+          {/* 區間：快選 + 自訂 */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-xs tk-l mr-1" style={{ color: "var(--mute)" }}>區間</span>
+            {quickPicks.map(q => chip(quick === q.k, () => applyQuick(q.k), q.l, q.k))}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <input type="date" value={startDate} onChange={e => setStart(e.target.value)}
+                   className="num px-2 py-1.5 rounded-md border-2 text-sm"
+                   style={{ borderColor: "var(--line-strong)", background: "var(--bg)" }} />
+            <span style={{ color: "var(--mute)" }}>～</span>
+            <input type="date" value={endDate} onChange={e => setEnd(e.target.value)}
+                   className="num px-2 py-1.5 rounded-md border-2 text-sm"
+                   style={{ borderColor: "var(--line-strong)", background: "var(--bg)" }} />
+            <button onClick={exportSessions} disabled={filtered.length === 0}
+                    className="btn-tactile ml-auto px-3 py-1.5 rounded-md text-xs font-medium"
+                    style={{
+                      background: filtered.length > 0 ? "var(--ink)" : "var(--line)",
+                      color: filtered.length > 0 ? "var(--bg)" : "var(--mute)",
+                    }}>
+              ⬇ 匯出場次統計
+            </button>
+          </div>
+
+          {/* 篩選：場次 / 星期 */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-xs tk-l mr-1" style={{ color: "var(--mute)" }}>場次</span>
+            {chip(perFilter === "all", () => setPerFilter("all"), "全部", "all")}
+            {chip(perFilter === "am", () => setPerFilter("am"), "早訓", "am")}
+            {chip(perFilter === "pm", () => setPerFilter("pm"), "午訓", "pm")}
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-xs tk-l mr-1" style={{ color: "var(--mute)" }}>星期</span>
+            {chip(dowFilter.length === 0, () => setDowFilter([]), "全部", "dow-all")}
+            {dowsInRange.map(d => chip(dowFilter.includes(d), () => toggleDow(d),
+              d === 0 ? "週日" : DAYS[d - 1], "dow-" + d))}
+          </div>
+
+          {startDate > endDate ? (
+            <div className="text-center py-4 text-sm" style={{ color: "var(--red)" }}>
+              結束日期不能早於開始日期
+            </div>
+          ) : sessions.length === 0 ? (
+            <div className="text-center py-4 text-sm" style={{ color: "var(--mute)" }}>
+              此區間沒有表定場次（或區間超過 400 天）
+            </div>
+          ) : (
+            <>
+              {/* 合計卡 */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                <SessionStatCard label="已點名場次" v={totals.n} sub="場" />
+                <SessionStatCard label="實到總數" v={totals.present} sub="人次" color="var(--green)" />
+                <SessionStatCard label="每場平均實到" v={totals.n > 0 ? fmt1(totals.present / totals.n) : "—"} sub="人/場" color="var(--green)" />
+                <SessionStatCard label="出席率" v={fmtPct(totals.present, totals.sch)} sub={totals.n > 0 ? `表定均 ${fmt1(totals.sch / totals.n)}` : ""} />
+                <SessionStatCard label="未點名場次" v={missing.length} sub="場" color={missing.length > 0 ? "var(--amber)" : undefined} alert={missing.length > 0} />
+              </div>
+
+              {/* 未點名提醒 */}
+              {missing.length > 0 && (
+                <div className="rounded-lg px-3 py-2 text-xs"
+                     style={{ background: "var(--amber-bg)", border: "1px solid var(--amber)", color: "#5C4810" }}>
+                  <div className="font-bold mb-1">⚠ 以下 {missing.length} 場已過期但尚未點名（未計入平均），點一下可前往補點：</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {missing.map(x => (
+                      <button key={x.key} onClick={() => goToDay(x.dateStr)}
+                              className="btn-tactile num px-2 py-0.5 rounded border text-[11px]"
+                              style={{ background: "var(--panel)", borderColor: "var(--amber)", color: "#5C4810" }}>
+                        {+x.dateStr.slice(5, 7)}/{+x.dateStr.slice(8, 10)} {x.dayLabel} {PERIOD_LABEL[x.per]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 星期 × 場次 彙總表 */}
+              <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "var(--line)" }}>
+                <table className="w-full text-xs" style={{ borderCollapse: "collapse", minWidth: 480 }}>
+                  <thead>
+                    <tr style={{ background: "var(--ink)", color: "var(--bg)" }}>
+                      <th style={{ ...th, textAlign: "left" }}>星期</th>
+                      <th style={th}>場次</th>
+                      <th style={th}>已點名<br/>場次</th>
+                      <th style={th}>實到<br/>總數</th>
+                      <th style={th}>每場<br/>平均實到</th>
+                      <th style={th}>每場<br/>平均表定</th>
+                      <th style={th}>出席率</th>
+                      <th style={th}>未點名</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groups.map(g => (
+                      <tr key={g.key} style={{ borderTop: "1px solid var(--line)" }}>
+                        <td style={{ ...td, textAlign: "left", color: "var(--ink)", fontWeight: 600 }}>{g.dayLabel}</td>
+                        <td style={{ ...td, color: "var(--ink-2)" }}>{PERIOD_LABEL[g.per]}</td>
+                        <td className="num" style={td}>{g.n}</td>
+                        <td className="num" style={{ ...td, color: "var(--green)", fontWeight: 700 }}>{g.present}</td>
+                        <td className="num" style={{ ...td, color: "var(--green)", fontWeight: 700 }}>{g.n > 0 ? fmt1(g.present / g.n) : "—"}</td>
+                        <td className="num" style={td}>{g.n > 0 ? fmt1(g.sch / g.n) : "—"}</td>
+                        <td className="num" style={td}>{fmtPct(g.present, g.sch)}</td>
+                        <td className="num" style={{ ...td, color: g.missing > 0 ? "var(--amber)" : "var(--mute)", fontWeight: g.missing > 0 ? 700 : 400 }}>
+                          {g.missing > 0 ? g.missing : "–"}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr style={{ borderTop: "2px solid var(--ink)", background: "var(--panel-2)", fontWeight: 700 }}>
+                      <td style={{ ...td, textAlign: "left" }} colSpan={2}>合計</td>
+                      <td className="num" style={td}>{totals.n}</td>
+                      <td className="num" style={{ ...td, color: "var(--green)" }}>{totals.present}</td>
+                      <td className="num" style={{ ...td, color: "var(--green)" }}>{totals.n > 0 ? fmt1(totals.present / totals.n) : "—"}</td>
+                      <td className="num" style={td}>{totals.n > 0 ? fmt1(totals.sch / totals.n) : "—"}</td>
+                      <td className="num" style={td}>{fmtPct(totals.present, totals.sch)}</td>
+                      <td className="num" style={{ ...td, color: missing.length > 0 ? "var(--amber)" : "var(--mute)" }}>{missing.length > 0 ? missing.length : "–"}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* 趨勢圖 */}
+              <div className="rounded-lg border p-2 sm:p-3" style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}>
+                <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                  <span className="text-xs tk-l mr-1" style={{ color: "var(--mute)" }}>趨勢</span>
+                  {chip(trendUnit === "week", () => setTrendUnit("week"), "每週", "tw")}
+                  {chip(trendUnit === "month", () => setTrendUnit("month"), "每月", "tm")}
+                  <span className="text-[10px] ml-auto" style={{ color: "var(--mute)" }}>
+                    依上方場次／星期篩選，只含已點名場次
+                  </span>
+                </div>
+                {trend.length === 0 ? (
+                  <div className="text-center py-3 text-xs" style={{ color: "var(--mute)" }}>此篩選下尚無已點名場次</div>
+                ) : (
+                  <SessionTrendChart data={trend} unitLabel={trendUnit === "week" ? "週（標示該週週一）" : "月"} />
+                )}
+              </div>
+
+              {/* 場次明細 */}
+              <button onClick={() => setShowDetail(!showDetail)}
+                      className="btn-tactile text-xs px-3 py-1.5 rounded-md border"
+                      style={{ borderColor: "var(--line-strong)", color: "var(--ink-2)", background: "var(--bg)" }}>
+                {showDetail ? "▲ 收合場次明細" : `▼ 展開場次明細（${filtered.length} 場）`}
+              </button>
+              {showDetail && (
+                <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "var(--line)" }}>
+                  <table className="w-full text-xs" style={{ borderCollapse: "collapse", minWidth: 440 }}>
+                    <thead>
+                      <tr style={{ background: "var(--ink)", color: "var(--bg)" }}>
+                        <th style={{ ...th, textAlign: "left" }}>日期</th>
+                        <th style={th}>星期</th>
+                        <th style={th}>場次</th>
+                        <th style={th}>場地</th>
+                        <th style={th}>表定</th>
+                        <th style={th}>實到</th>
+                        <th style={th}>出席率</th>
+                        <th style={th}>狀態</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map(x => (
+                        <tr key={x.key} onClick={() => goToDay(x.dateStr)} style={{ borderTop: "1px solid var(--line)", cursor: "pointer" }}
+                            title="點擊前往該日點名">
+                          <td className="num" style={{ ...td, textAlign: "left", color: "var(--ink)" }}>{x.dateStr.slice(5)}</td>
+                          <td style={{ ...td, color: "var(--ink-2)" }}>{x.dayLabel}</td>
+                          <td style={{ ...td, color: "var(--ink-2)" }}>{PERIOD_LABEL[x.per]}</td>
+                          <td style={{ ...td, color: "var(--ink-2)" }}>{x.venue}</td>
+                          <td className="num" style={td}>{x.sch}</td>
+                          <td className="num" style={{ ...td, color: x.taken ? "var(--green)" : "var(--mute)", fontWeight: x.taken ? 700 : 400 }}>{x.taken ? x.present : "—"}</td>
+                          <td className="num" style={td}>{x.taken ? fmtPct(x.present, x.sch) : "—"}</td>
+                          <td style={{ ...td, fontWeight: 600,
+                                       color: x.taken ? "var(--green)" : x.isPast ? "var(--amber)" : "var(--mute)" }}>
+                            {x.taken ? "已點名" : x.isPast ? "未點名" : x.isToday ? "今天" : "未來"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="text-[10px]" style={{ color: "var(--mute)" }}>
+                表定場次＝當天非停練且該時段場地非「停練」；只計已點名的場次（至少一人被標出席/未到），未點名且已過期的場次另列提醒、不計入平均。
+                出席率＝實到 ÷ 表定。跨月區間會自動計入當時仍在隊的畢業生。
               </div>
             </>
           )}
